@@ -6,8 +6,8 @@ using System.Text;
 using UnityEngine;
 
 // Biến cửa sổ game thành khung PIP: không thanh tiêu đề, luôn nổi, không tự tắt được.
-// Kéo mép để đổi kích thước, giữ chuột phải để di chuyển (chuột trái dành cho thao tác trong game).
-// Chỉ chạy trong bản build Windows. Trong Unity Editor script này không làm gì (đỡ làm hỏng cửa sổ Editor).
+// Kéo mép/góc bằng chuột trái để đổi kích thước, giữ chuột phải để di chuyển (chuột trái ở giữa dành cho thao tác trong game).
+// Vị trí và kích thước được lưu lại (PipBounds). Chỉ chạy trong bản build Windows. Trong Unity Editor script này không làm gì (đỡ làm hỏng cửa sổ Editor).
 public class PipWindow : MonoBehaviour
 {
     public enum Corner { TopLeft, TopRight, BottomLeft, BottomRight }
@@ -25,17 +25,27 @@ public class PipWindow : MonoBehaviour
 
     public bool IsVisible { get; private set; } = true;
 
+    // Vùng góc trên-phải (pixel, tính từ góc) dành cho các nút của thanh tiêu đề, không dùng để đổi kích thước
+    public Vector2 TopRightReserved { get; set; }
+
 #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
     const int GWL_STYLE = -16;
     const int GWL_EXSTYLE = -20;
 
     const long WS_POPUP = 0x80000000L;
     const long WS_CAPTION = 0x00C00000L;       // thanh tiêu đề + viền mảnh
-    const long WS_THICKFRAME = 0x00040000L;    // viền kéo giãn kích thước (giữ lại để kéo mép đổi cỡ)
+    const long WS_THICKFRAME = 0x00040000L;    // viền kéo giãn; bỏ đi vì Windows 10 vẽ thêm một vạch sáng ở mép trên cửa sổ
     const long WS_SYSMENU = 0x00080000L;       // menu hệ thống và nút X
     const long WS_MINIMIZEBOX = 0x00020000L;   // nút thu nhỏ
     const long WS_MAXIMIZEBOX = 0x00010000L;   // nút phóng to
-    const long REMOVED_STYLES = WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+    const long REMOVED_STYLES = WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+
+    const int EdgeSize = 6;                    // bề dày vùng mép để bắt chuột đổi kích thước (pixel)
+    const int VK_LBUTTON = 0x01;
+    const int SM_XVIRTUALSCREEN = 76;          // vùng bao của tất cả các màn hình
+    const int SM_YVIRTUALSCREEN = 77;
+    const int SM_CXVIRTUALSCREEN = 78;
+    const int SM_CYVIRTUALSCREEN = 79;
 
     // Control Panel là app Unity riêng: tìm theo lớp cửa sổ và tên sản phẩm (xem PipBuild), file exe nằm cạnh thư mục Aquarium
     const string ControlPanelClass = "UnityWndClass";
@@ -82,14 +92,19 @@ public class PipWindow : MonoBehaviour
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT point);
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int virtualKey);
+    [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+
+    enum Gesture { None, Moving, Resizing }
 
     IntPtr window = IntPtr.Zero;
     int visibleFrameRate;
     bool allowQuit;
 
-    bool dragging;
-    POINT dragCursorStart;
-    Vector2Int dragWindowStart;
+    Gesture gesture = Gesture.None;
+    PipEdge hoveredEdges = PipEdge.None;   // mép đang được chỉ vào (khi không đang kéo)
+    PipEdge resizeEdges = PipEdge.None;    // mép đang được kéo
+    POINT gestureCursorStart;
+    RECT gestureRectStart;
 
     void OnEnable() { Application.wantsToQuit += OnWantsToQuit; }
     void OnDisable() { Application.wantsToQuit -= OnWantsToQuit; }
@@ -114,9 +129,9 @@ public class PipWindow : MonoBehaviour
         }
 
         ApplyStyle();
-        PlaceAtCorner();
+        PlaceInitially();
 
-        // Unity đôi khi đặt lại kiểu cửa sổ (ví dụ khi đổi độ phân giải), nên kiểm tra và bỏ lại thanh tiêu đề định kỳ.
+        // Unity đôi khi đặt lại kiểu cửa sổ (ví dụ khi đổi độ phân giải), nên kiểm tra và bỏ lại thanh tiêu đề và viền định kỳ.
         // Chỉ sửa kiểu cửa sổ, không đụng vị trí và kích thước vì người dùng được tự kéo.
         var wait = new WaitForSecondsRealtime(lockCheckSeconds);
         while (true)
@@ -126,43 +141,107 @@ public class PipWindow : MonoBehaviour
         }
     }
 
-    // Giữ chuột phải để kéo cửa sổ đi chỗ khác: cửa sổ bám theo con trỏ cho tới khi thả chuột.
-    // Dùng toạ độ con trỏ trên màn hình (không dùng Input.mousePosition vì nó đổi theo khi cửa sổ di chuyển).
+    // Chuột phải: kéo cả cửa sổ đi chỗ khác. Chuột trái ở mép/góc: đổi kích thước.
+    // Cửa sổ bám theo con trỏ cho tới khi thả chuột. Dùng toạ độ con trỏ trên màn hình
+    // (không dùng Input.mousePosition vì nó đổi theo khi cửa sổ di chuyển).
     void Update()
     {
         if (window == IntPtr.Zero || !IsVisible) return;
 
-        if (!dragging)
+        switch (gesture)
         {
-            if (Input.GetMouseButtonDown(1)) BeginDrag();
-            return;
+            case Gesture.Moving: ContinueMove(); return;
+            case Gesture.Resizing: ContinueResize(); return;
         }
 
+        UpdateHoveredEdges();
+        if (Input.GetMouseButtonDown(1)) BeginGesture(Gesture.Moving, PipEdge.None);
+        else if (Input.GetMouseButtonDown(0) && hoveredEdges != PipEdge.None) BeginGesture(Gesture.Resizing, hoveredEdges);
+    }
+
+    void UpdateHoveredEdges()
+    {
+        PipEdge edges = HitTestEdges();
+        if (edges == hoveredEdges) return;
+        hoveredEdges = edges;
+        PipResizeCursors.Apply(edges);
+    }
+
+    // Mép/góc nào đang nằm dưới con trỏ (None nếu con trỏ ở giữa hoặc ngoài cửa sổ)
+    PipEdge HitTestEdges()
+    {
+        if (!IsCursorOver) return PipEdge.None;
+
+        Vector3 mouse = Input.mousePosition;   // gốc ở góc dưới-trái của cửa sổ
+        bool inReservedArea = mouse.x >= Screen.width - TopRightReserved.x && mouse.y >= Screen.height - TopRightReserved.y;
+        if (inReservedArea) return PipEdge.None;
+
+        PipEdge edges = PipEdge.None;
+        if (mouse.x < EdgeSize) edges |= PipEdge.Left;
+        else if (mouse.x >= Screen.width - EdgeSize) edges |= PipEdge.Right;
+        if (mouse.y < EdgeSize) edges |= PipEdge.Bottom;
+        else if (mouse.y >= Screen.height - EdgeSize) edges |= PipEdge.Top;
+        return edges;
+    }
+
+    void BeginGesture(Gesture kind, PipEdge edges)
+    {
+        GetCursorPos(out gestureCursorStart);
+        GetWindowRect(window, out gestureRectStart);
+        gesture = kind;
+        resizeEdges = edges;
+        Application.targetFrameRate = DragFrameRate;
+    }
+
+    void ContinueMove()
+    {
         if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000) == 0)
         {
-            EndDrag();
+            EndGesture();
             return;
         }
 
         GetCursorPos(out POINT cursor);
-        int x = dragWindowStart.x + cursor.x - dragCursorStart.x;
-        int y = dragWindowStart.y + cursor.y - dragCursorStart.y;
+        int x = gestureRectStart.left + cursor.x - gestureCursorStart.x;
+        int y = gestureRectStart.top + cursor.y - gestureCursorStart.y;
         SetWindowPos(window, IntPtr.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
-    void BeginDrag()
+    void ContinueResize()
     {
-        GetCursorPos(out dragCursorStart);
-        GetWindowRect(window, out RECT rect);
-        dragWindowStart = new Vector2Int(rect.left, rect.top);
-        dragging = true;
-        Application.targetFrameRate = DragFrameRate;
+        if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0)
+        {
+            EndGesture();
+            return;
+        }
+
+        GetCursorPos(out POINT cursor);
+        int dx = cursor.x - gestureCursorStart.x;
+        int dy = cursor.y - gestureCursorStart.y;
+
+        int left = gestureRectStart.left, top = gestureRectStart.top;
+        int right = gestureRectStart.right, bottom = gestureRectStart.bottom;
+        if ((resizeEdges & PipEdge.Left) != 0) left = Math.Min(left + dx, right - PipBounds.MinSize);
+        if ((resizeEdges & PipEdge.Right) != 0) right = Math.Max(right + dx, left + PipBounds.MinSize);
+        if ((resizeEdges & PipEdge.Top) != 0) top = Math.Min(top + dy, bottom - PipBounds.MinSize);
+        if ((resizeEdges & PipEdge.Bottom) != 0) bottom = Math.Max(bottom + dy, top + PipBounds.MinSize);
+
+        SetWindowPos(window, IntPtr.Zero, left, top, right - left, bottom - top, SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
-    void EndDrag()
+    void EndGesture()
     {
-        dragging = false;
+        gesture = Gesture.None;
+        resizeEdges = PipEdge.None;
         Application.targetFrameRate = visibleFrameRate;
+        SaveBounds();
+    }
+
+    // Lưu vị trí và kích thước hiện tại để lần sau mở lại đúng chỗ
+    void SaveBounds()
+    {
+        GetWindowRect(window, out RECT rect);
+        new PipBounds(new RectInt(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top)).Save();
     }
 
     // Tìm cửa sổ chính của game bằng tên lớp, chắc hơn GetActiveWindow() vì không phụ thuộc cửa sổ nào đang được focus
@@ -181,12 +260,12 @@ public class PipWindow : MonoBehaviour
         return found;
     }
 
-    // Bỏ thanh tiêu đề và các nút hệ thống, giữ viền mỏng để kéo đổi kích thước, bật luôn nổi và ẩn khỏi taskbar.
+    // Bỏ thanh tiêu đề, viền và các nút hệ thống, bật luôn nổi và ẩn khỏi taskbar.
     // Giữ nguyên vị trí và kích thước hiện tại.
     void ApplyStyle()
     {
         long style = ReadStyle(GWL_STYLE);
-        style = (style & ~REMOVED_STYLES) | WS_POPUP | WS_THICKFRAME;
+        style = (style & ~REMOVED_STYLES) | WS_POPUP;
         SetWindowLongPtr(window, GWL_STYLE, new IntPtr(style));
 
         if (hideFromTaskbar)
@@ -199,13 +278,25 @@ public class PipWindow : MonoBehaviour
         SetWindowPos(window, order, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE);
     }
 
-    // Đặt cửa sổ vào góc màn hình với kích thước ban đầu (chỉ làm một lần lúc mở)
-    void PlaceAtCorner()
+    // Lúc mở: về chỗ đã lưu nếu còn nằm trong màn hình, không thì vào góc mặc định (chỉ làm một lần)
+    void PlaceInitially()
     {
-        RECT target = ComputeTargetRect();
         IntPtr order = alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST;
+
+        if (PipBounds.TryLoad(out PipBounds saved) && saved.IsReachable(VirtualScreen()))
+        {
+            RectInt r = saved.rect;
+            SetWindowPos(window, order, r.x, r.y, r.width, r.height, SWP_NOACTIVATE);
+            return;
+        }
+
+        RECT target = ComputeTargetRect();
         SetWindowPos(window, order, target.left, target.top, size.x, size.y, SWP_NOACTIVATE);
     }
+
+    static RectInt VirtualScreen() => new RectInt(
+        GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN),
+        GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN));
 
     bool HasRemovedStyles() => (ReadStyle(GWL_STYLE) & REMOVED_STYLES) != 0;
 
@@ -237,7 +328,7 @@ public class PipWindow : MonoBehaviour
     public void Hide()
     {
         if (window == IntPtr.Zero) return;
-        dragging = false;
+        gesture = Gesture.None;
         ShowWindow(window, SW_HIDE);
         Application.targetFrameRate = hiddenFrameRate;
         IsVisible = false;

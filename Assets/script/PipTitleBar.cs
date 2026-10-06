@@ -21,7 +21,11 @@ public class PipTitleBar : MonoBehaviour
     PipWindow pip;
     float alpha;
 
-    void Awake() { pip = GetComponent<PipWindow>(); }
+    void Awake()
+    {
+        pip = GetComponent<PipWindow>();
+        pip.TopRightReserved = new Vector2(ButtonWidth * 3f, BarHeight);   // vùng 3 nút, không dùng để đổi kích thước
+    }
 
     void Update()
     {
