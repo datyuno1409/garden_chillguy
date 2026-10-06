@@ -1,16 +1,11 @@
 using UnityEngine;
 
-public class NewMonoBehaviourScript : MonoBehaviour
+public class AppSetup : MonoBehaviour
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    void Awake()
     {
-        
-    }
-
-    // Update is called once per frame
-    void Update()
-    {
-        
+        Application.runInBackground = true;   // game không đứng hình khi bạn bấm sang app khác
+        QualitySettings.vSyncCount = 0;        // tắt vSync, nếu không dòng dưới sẽ không có tác dụng
+        Application.targetFrameRate = 30;      // giới hạn 30 khung hình/giây để đỡ tốn máy
     }
 }

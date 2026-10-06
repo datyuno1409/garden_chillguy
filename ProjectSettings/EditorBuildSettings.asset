@@ -4,5 +4,8 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
+  m_Scenes:
+  - enabled: 1
+    path: Assets/cozy garden.unity
+    guid: 362df1fb1435b0f44bb1f9028a397793
   m_configObjects: {}
