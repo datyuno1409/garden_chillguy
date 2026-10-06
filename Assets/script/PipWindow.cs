@@ -6,7 +6,8 @@ using System.Text;
 using UnityEngine;
 
 // Biến cửa sổ game thành khung PIP: không thanh tiêu đề, luôn nổi, không tự tắt được.
-// Kéo mép/góc bằng chuột trái để đổi kích thước, giữ chuột phải để di chuyển (chuột trái ở giữa dành cho thao tác trong game).
+// Cửa sổ chỉ để ngắm và click tương tác; thiết kế vườn nằm ở Control Panel.
+// Chuột trái: kéo thanh tiêu đề để di chuyển, kéo mép/góc để đổi kích thước. Vùng giữa dành cho thao tác trong game.
 // Vị trí và kích thước được lưu lại (PipBounds). Chỉ chạy trong bản build Windows. Trong Unity Editor script này không làm gì (đỡ làm hỏng cửa sổ Editor).
 public class PipWindow : MonoBehaviour
 {
@@ -25,8 +26,10 @@ public class PipWindow : MonoBehaviour
 
     public bool IsVisible { get; private set; } = true;
 
-    // Vùng góc trên-phải (pixel, tính từ góc) dành cho các nút của thanh tiêu đề, không dùng để đổi kích thước
-    public Vector2 TopRightReserved { get; set; }
+    // Kích thước thanh tiêu đề do PipTitleBar khai báo (pixel). Phần bên trái các nút dùng để kéo cửa sổ,
+    // vùng nút bấm không dùng để kéo hay đổi kích thước.
+    public float TitleBarHeight { get; set; }
+    public float TitleBarButtonsWidth { get; set; }
 
 #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
     const int GWL_STYLE = -16;
@@ -53,7 +56,6 @@ public class PipWindow : MonoBehaviour
     const string ControlPanelExePath = "../ControlPanel/ControlPanel.exe";
     const int SW_RESTORE = 9;
 
-    const int VK_RBUTTON = 0x02;
     const int DragFrameRate = 60;              // tăng khung hình khi đang kéo cho mượt
     const uint SWP_NOSIZE = 0x0001;
     const uint SWP_NOMOVE = 0x0002;
@@ -141,7 +143,7 @@ public class PipWindow : MonoBehaviour
         }
     }
 
-    // Chuột phải: kéo cả cửa sổ đi chỗ khác. Chuột trái ở mép/góc: đổi kích thước.
+    // Chuột trái: kéo thanh tiêu đề để di chuyển cửa sổ, kéo mép/góc để đổi kích thước.
     // Cửa sổ bám theo con trỏ cho tới khi thả chuột. Dùng toạ độ con trỏ trên màn hình
     // (không dùng Input.mousePosition vì nó đổi theo khi cửa sổ di chuyển).
     void Update()
@@ -155,8 +157,20 @@ public class PipWindow : MonoBehaviour
         }
 
         UpdateHoveredEdges();
-        if (Input.GetMouseButtonDown(1)) BeginGesture(Gesture.Moving, PipEdge.None);
-        else if (Input.GetMouseButtonDown(0) && hoveredEdges != PipEdge.None) BeginGesture(Gesture.Resizing, hoveredEdges);
+        if (!Input.GetMouseButtonDown(0)) return;
+
+        if (hoveredEdges != PipEdge.None) BeginGesture(Gesture.Resizing, hoveredEdges);
+        else if (IsOverTitleBarDragArea()) BeginGesture(Gesture.Moving, PipEdge.None);
+    }
+
+    // Con trỏ đang ở thanh tiêu đề, bên trái vùng nút bấm
+    bool IsOverTitleBarDragArea()
+    {
+        if (!IsCursorOver) return false;
+        Vector3 mouse = Input.mousePosition;
+        bool inBar = mouse.y >= Screen.height - TitleBarHeight;
+        bool inButtons = mouse.x >= Screen.width - TitleBarButtonsWidth;
+        return inBar && !inButtons;
     }
 
     void UpdateHoveredEdges()
@@ -173,8 +187,8 @@ public class PipWindow : MonoBehaviour
         if (!IsCursorOver) return PipEdge.None;
 
         Vector3 mouse = Input.mousePosition;   // gốc ở góc dưới-trái của cửa sổ
-        bool inReservedArea = mouse.x >= Screen.width - TopRightReserved.x && mouse.y >= Screen.height - TopRightReserved.y;
-        if (inReservedArea) return PipEdge.None;
+        bool inButtonArea = mouse.x >= Screen.width - TitleBarButtonsWidth && mouse.y >= Screen.height - TitleBarHeight;
+        if (inButtonArea) return PipEdge.None;
 
         PipEdge edges = PipEdge.None;
         if (mouse.x < EdgeSize) edges |= PipEdge.Left;
@@ -195,7 +209,7 @@ public class PipWindow : MonoBehaviour
 
     void ContinueMove()
     {
-        if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000) == 0)
+        if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0)
         {
             EndGesture();
             return;

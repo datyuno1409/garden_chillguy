@@ -1,6 +1,7 @@
 using UnityEngine;
 
-// Thanh nút hiện dần khi rê chuột vào cửa sổ PIP: Ẩn, Về Control Panel, Tắt. Rời chuột thì mờ dần.
+// Thanh tiêu đề hiện dần khi rê chuột vào cửa sổ PIP: giữ chuột trái trên thanh để kéo cửa sổ (PipWindow xử lý),
+// và 3 nút Ẩn, Về Control Panel, Tắt. Rời chuột thì mờ dần.
 // Vẽ bằng IMGUI nên không cần asset nào. Gắn cùng chỗ với PipWindow.
 [RequireComponent(typeof(PipWindow))]
 public class PipTitleBar : MonoBehaviour
@@ -24,7 +25,8 @@ public class PipTitleBar : MonoBehaviour
     void Awake()
     {
         pip = GetComponent<PipWindow>();
-        pip.TopRightReserved = new Vector2(ButtonWidth * 3f, BarHeight);   // vùng 3 nút, không dùng để đổi kích thước
+        pip.TitleBarHeight = BarHeight;                 // phần còn lại của thanh dùng để kéo cửa sổ
+        pip.TitleBarButtonsWidth = ButtonWidth * 3f;    // vùng 3 nút bấm
     }
 
     void Update()
