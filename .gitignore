@@ -8,6 +8,18 @@
 [Uu]ser[Ss]ettings/
 MemoryCaptures/
 
+# Sinh lại được bằng ./update-graph.ps1 (graphify knowledge graph)
+graphify-out/
+
+# Cài đặt riêng của từng máy / tool AI, không chia sẻ
+.claude/settings.local.json
+ProjectSettings/Packages/com.unity.ai.assistant/
+
+# Log, thông tin máy
+*.log
+sysinfo.txt
+crashlytics-build.properties
+
 # Visual Studio / Rider / IDE
 .vs/
 .vscode/
