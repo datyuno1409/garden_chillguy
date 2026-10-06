@@ -1,16 +1,18 @@
 using System;
 using System.Collections;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using UnityEngine;
 
-// Biến cửa sổ game thành khung PIP: không viền, khóa vị trí/kích thước, không tự tắt được.
+// Biến cửa sổ game thành khung PIP: không thanh tiêu đề, luôn nổi, không tự tắt được.
+// Kéo mép để đổi kích thước, giữ chuột phải để di chuyển (chuột trái dành cho thao tác trong game).
 // Chỉ chạy trong bản build Windows. Trong Unity Editor script này không làm gì (đỡ làm hỏng cửa sổ Editor).
 public class PipWindow : MonoBehaviour
 {
     public enum Corner { TopLeft, TopRight, BottomLeft, BottomRight }
 
-    [Header("Kích thước và vị trí (pixel)")]
+    [Header("Kích thước và vị trí ban đầu (pixel)")]
     [SerializeField] Vector2Int size = new Vector2Int(400, 400);
     [SerializeField] Corner corner = Corner.BottomRight;   // góc màn hình để ghim vào
     [SerializeField] Vector2Int margin = new Vector2Int(24, 24);   // cách mép bao nhiêu pixel
@@ -19,7 +21,7 @@ public class PipWindow : MonoBehaviour
     [SerializeField] bool alwaysOnTop = true;        // luôn nằm trên các app khác
     [SerializeField] bool hideFromTaskbar = true;    // ẩn khỏi thanh taskbar và Alt+Tab
     [SerializeField] int hiddenFrameRate = 5;        // khung hình/giây khi đang ẩn, để đỡ tốn máy
-    [SerializeField] float lockCheckSeconds = 1f;    // bao lâu kiểm tra và ghim lại vị trí một lần
+    [SerializeField] float lockCheckSeconds = 1f;    // bao lâu kiểm tra và bỏ lại thanh tiêu đề nếu Unity đặt lại kiểu cửa sổ
 
     public bool IsVisible { get; private set; } = true;
 
@@ -29,11 +31,23 @@ public class PipWindow : MonoBehaviour
 
     const long WS_POPUP = 0x80000000L;
     const long WS_CAPTION = 0x00C00000L;       // thanh tiêu đề + viền mảnh
-    const long WS_THICKFRAME = 0x00040000L;    // viền kéo giãn kích thước
+    const long WS_THICKFRAME = 0x00040000L;    // viền kéo giãn kích thước (giữ lại để kéo mép đổi cỡ)
     const long WS_SYSMENU = 0x00080000L;       // menu hệ thống và nút X
     const long WS_MINIMIZEBOX = 0x00020000L;   // nút thu nhỏ
     const long WS_MAXIMIZEBOX = 0x00010000L;   // nút phóng to
-    const long FRAME_STYLES = WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+    const long REMOVED_STYLES = WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+
+    // Control Panel là app Unity riêng: tìm theo lớp cửa sổ và tên sản phẩm (xem PipBuild), file exe nằm cạnh thư mục Aquarium
+    const string ControlPanelClass = "UnityWndClass";
+    const string ControlPanelTitle = "ControlPanel";
+    const string ControlPanelExePath = "../ControlPanel/ControlPanel.exe";
+    const int SW_RESTORE = 9;
+
+    const int VK_RBUTTON = 0x02;
+    const int DragFrameRate = 60;              // tăng khung hình khi đang kéo cho mượt
+    const uint SWP_NOSIZE = 0x0001;
+    const uint SWP_NOMOVE = 0x0002;
+    const uint SWP_NOZORDER = 0x0004;
 
     const long WS_EX_APPWINDOW = 0x00040000L;
     const long WS_EX_TOOLWINDOW = 0x00000080L;
@@ -50,6 +64,9 @@ public class PipWindow : MonoBehaviour
     [StructLayout(LayoutKind.Sequential)]
     struct RECT { public int left, top, right, bottom; }
 
+    [StructLayout(LayoutKind.Sequential)]
+    struct POINT { public int x, y; }
+
     delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
@@ -61,10 +78,18 @@ public class PipWindow : MonoBehaviour
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int command);
     [DllImport("user32.dll")] static extern bool SystemParametersInfo(uint action, uint param, ref RECT rect, uint winIni);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindow(string className, string windowName);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT point);
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int virtualKey);
 
     IntPtr window = IntPtr.Zero;
     int visibleFrameRate;
     bool allowQuit;
+
+    bool dragging;
+    POINT dragCursorStart;
+    Vector2Int dragWindowStart;
 
     void OnEnable() { Application.wantsToQuit += OnWantsToQuit; }
     void OnDisable() { Application.wantsToQuit -= OnWantsToQuit; }
@@ -88,15 +113,56 @@ public class PipWindow : MonoBehaviour
             yield break;
         }
 
-        ApplyLock(true);
+        ApplyStyle();
+        PlaceAtCorner();
 
-        // Unity đôi khi đặt lại kiểu cửa sổ (ví dụ khi đổi độ phân giải), nên kiểm tra và ghim lại định kỳ
+        // Unity đôi khi đặt lại kiểu cửa sổ (ví dụ khi đổi độ phân giải), nên kiểm tra và bỏ lại thanh tiêu đề định kỳ.
+        // Chỉ sửa kiểu cửa sổ, không đụng vị trí và kích thước vì người dùng được tự kéo.
         var wait = new WaitForSecondsRealtime(lockCheckSeconds);
         while (true)
         {
             yield return wait;
-            if (IsLockBroken()) ApplyLock(true);
+            if (HasRemovedStyles()) ApplyStyle();
         }
+    }
+
+    // Giữ chuột phải để kéo cửa sổ đi chỗ khác: cửa sổ bám theo con trỏ cho tới khi thả chuột.
+    // Dùng toạ độ con trỏ trên màn hình (không dùng Input.mousePosition vì nó đổi theo khi cửa sổ di chuyển).
+    void Update()
+    {
+        if (window == IntPtr.Zero || !IsVisible) return;
+
+        if (!dragging)
+        {
+            if (Input.GetMouseButtonDown(1)) BeginDrag();
+            return;
+        }
+
+        if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000) == 0)
+        {
+            EndDrag();
+            return;
+        }
+
+        GetCursorPos(out POINT cursor);
+        int x = dragWindowStart.x + cursor.x - dragCursorStart.x;
+        int y = dragWindowStart.y + cursor.y - dragCursorStart.y;
+        SetWindowPos(window, IntPtr.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    void BeginDrag()
+    {
+        GetCursorPos(out dragCursorStart);
+        GetWindowRect(window, out RECT rect);
+        dragWindowStart = new Vector2Int(rect.left, rect.top);
+        dragging = true;
+        Application.targetFrameRate = DragFrameRate;
+    }
+
+    void EndDrag()
+    {
+        dragging = false;
+        Application.targetFrameRate = visibleFrameRate;
     }
 
     // Tìm cửa sổ chính của game bằng tên lớp, chắc hơn GetActiveWindow() vì không phụ thuộc cửa sổ nào đang được focus
@@ -115,11 +181,12 @@ public class PipWindow : MonoBehaviour
         return found;
     }
 
-    // Bỏ viền, ghim vị trí và kích thước
-    void ApplyLock(bool frameChanged)
+    // Bỏ thanh tiêu đề và các nút hệ thống, giữ viền mỏng để kéo đổi kích thước, bật luôn nổi và ẩn khỏi taskbar.
+    // Giữ nguyên vị trí và kích thước hiện tại.
+    void ApplyStyle()
     {
         long style = ReadStyle(GWL_STYLE);
-        style = (style & ~FRAME_STYLES) | WS_POPUP;
+        style = (style & ~REMOVED_STYLES) | WS_POPUP | WS_THICKFRAME;
         SetWindowLongPtr(window, GWL_STYLE, new IntPtr(style));
 
         if (hideFromTaskbar)
@@ -128,21 +195,19 @@ public class PipWindow : MonoBehaviour
             SetWindowLongPtr(window, GWL_EXSTYLE, new IntPtr(exStyle));
         }
 
-        RECT target = ComputeTargetRect();
-        uint flags = SWP_NOACTIVATE | (frameChanged ? SWP_FRAMECHANGED : 0);
         IntPtr order = alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST;
-        SetWindowPos(window, order, target.left, target.top, size.x, size.y, flags);
+        SetWindowPos(window, order, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE);
     }
 
-    bool IsLockBroken()
+    // Đặt cửa sổ vào góc màn hình với kích thước ban đầu (chỉ làm một lần lúc mở)
+    void PlaceAtCorner()
     {
-        if ((ReadStyle(GWL_STYLE) & FRAME_STYLES) != 0) return true;
-
         RECT target = ComputeTargetRect();
-        GetWindowRect(window, out RECT now);
-        return now.left != target.left || now.top != target.top
-            || now.right - now.left != size.x || now.bottom - now.top != size.y;
+        IntPtr order = alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST;
+        SetWindowPos(window, order, target.left, target.top, size.x, size.y, SWP_NOACTIVATE);
     }
+
+    bool HasRemovedStyles() => (ReadStyle(GWL_STYLE) & REMOVED_STYLES) != 0;
 
     long ReadStyle(int index) => GetWindowLongPtr(window, index).ToInt64() & 0xFFFFFFFFL;
 
@@ -172,6 +237,7 @@ public class PipWindow : MonoBehaviour
     public void Hide()
     {
         if (window == IntPtr.Zero) return;
+        dragging = false;
         ShowWindow(window, SW_HIDE);
         Application.targetFrameRate = hiddenFrameRate;
         IsVisible = false;
@@ -182,10 +248,77 @@ public class PipWindow : MonoBehaviour
         allowQuit = true;
         Application.Quit();
     }
+
+    // Con trỏ đang nằm trong cửa sổ PIP không (tính theo toạ độ màn hình nên đúng cả khi cửa sổ không có focus)
+    public bool IsCursorOver
+    {
+        get
+        {
+            if (window == IntPtr.Zero || !IsVisible) return false;
+            GetCursorPos(out POINT cursor);
+            GetWindowRect(window, out RECT rect);
+            return cursor.x >= rect.left && cursor.x < rect.right && cursor.y >= rect.top && cursor.y < rect.bottom;
+        }
+    }
+
+    // Đưa Control Panel lên trước; chưa chạy thì bật nó
+    public void OpenControlPanel()
+    {
+        IntPtr panel = FindWindow(ControlPanelClass, ControlPanelTitle);
+        if (panel == IntPtr.Zero)
+        {
+            LaunchControlPanel();
+            return;
+        }
+        ShowWindow(panel, SW_RESTORE);
+        SetForegroundWindow(panel);
+    }
+
+    // Chỉ bật Control Panel nếu chưa chạy, không cướp focus nếu nó đã mở sẵn
+    public void EnsureControlPanelRunning()
+    {
+        if (FindWindow(ControlPanelClass, ControlPanelTitle) == IntPtr.Zero) LaunchControlPanel();
+    }
+
+    static void LaunchControlPanel()
+    {
+        string aquariumDir = Path.GetDirectoryName(Application.dataPath);
+        string exe = Path.GetFullPath(Path.Combine(aquariumDir, ControlPanelExePath));
+        if (!File.Exists(exe))
+        {
+            Debug.LogWarning("PipWindow: không tìm thấy ControlPanel.exe: " + exe);
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe)
+            {
+                WorkingDirectory = Path.GetDirectoryName(exe),
+                UseShellExecute = false,
+            });
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("PipWindow: không bật được Control Panel: " + e.Message);
+        }
+    }
 #else
     // Trong Editor hoặc nền tảng khác: giữ các hàm để nút bấm không báo lỗi, nhưng không làm gì
     public void Show() { IsVisible = true; Debug.Log("PipWindow.Show (chỉ có tác dụng trong bản build Windows)"); }
     public void Hide() { IsVisible = false; Debug.Log("PipWindow.Hide (chỉ có tác dụng trong bản build Windows)"); }
     public void Quit() { Debug.Log("PipWindow.Quit (chỉ có tác dụng trong bản build Windows)"); }
+    public void OpenControlPanel() { Debug.Log("PipWindow.OpenControlPanel (chỉ có tác dụng trong bản build Windows)"); }
+    public void EnsureControlPanelRunning() { }
+
+    // Trong Editor: cho phép xem thử thanh nút ở Game view bằng cách rê chuột vào
+    public bool IsCursorOver
+    {
+        get
+        {
+            Vector3 mouse = Input.mousePosition;
+            return mouse.x >= 0 && mouse.x < Screen.width && mouse.y >= 0 && mouse.y < Screen.height;
+        }
+    }
 #endif
 }

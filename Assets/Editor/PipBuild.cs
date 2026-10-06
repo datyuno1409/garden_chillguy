@@ -26,12 +26,12 @@ public static class PipBuild
     public static void BuildBoth()
     {
         string root = Path.GetFullPath(Path.Combine(Application.dataPath, "../../Builds"));
-        Build("Aquarium", AquariumScene, root, resizable: false, new Vector2Int(400, 400));
+        Build("Aquarium", AquariumScene, root, resizable: true, new Vector2Int(400, 400));
         Build("ControlPanel", PanelScene, root, resizable: true, new Vector2Int(360, 320));
         Debug.Log("PipBuild: build xong tại " + root);
     }
 
-    // Thêm PipWindow và PipCommandServer vào _Manager của scene bể cá (không đụng các object khác)
+    // Thêm PipWindow, PipCommandServer và PipTitleBar vào _Manager của scene bể cá (không đụng các object khác)
     static void SetupAquarium()
     {
         Scene scene = OpenAdditive(AquariumScene, out bool openedByUs);
@@ -44,6 +44,7 @@ public static class PipBuild
         }
         EnsureComponent<PipWindow>(manager);
         EnsureComponent<PipCommandServer>(manager);
+        EnsureComponent<PipTitleBar>(manager);
 
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
