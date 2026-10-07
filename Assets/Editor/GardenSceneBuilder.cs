@@ -40,7 +40,8 @@ public static class GardenSceneBuilder
 
         Materials materials = CreateMaterials();
         BuildGround(root.transform, materials);
-        BuildRocks(root.transform, materials);
+        MossGrowth moss = BuildRocks(root.transform, materials);
+        root.AddComponent<GardenGrowthSystem>().Configure(moss);
         BuildDetails(root.transform, materials);
         BuildFramingLeaves(root.transform, materials);
         SetupLighting();
@@ -158,11 +159,12 @@ public static class GardenSceneBuilder
 
     // ---------- Đá ----------
 
-    static void BuildRocks(Transform parent, Materials m)
+    static MossGrowth BuildRocks(Transform parent, Materials m)
     {
         var rocks = new GameObject("Rocks").transform;
         rocks.SetParent(parent, false);
-        rocks.gameObject.AddComponent<MossGrowth>().Coverage = 0.6f;
+        var moss = rocks.gameObject.AddComponent<MossGrowth>();
+        moss.Coverage = 0.6f;   // chỉ để xem ở Editor; khi chạy GardenGrowthSystem đặt theo số ngày
 
         // x, z, bán kính x/y/z, seed. Tảng đầu tiên là tảng chính ở giữa.
         float[][] layout =
@@ -184,6 +186,8 @@ public static class GardenSceneBuilder
             GameObject rock = NewBlob("Rock_" + (int)r[5], rocks, new Vector3(r[0], y, r[1]), scale, m.rockMoss, settings);
             rock.transform.rotation = Quaternion.Euler(0f, r[5] * 23f, 0f);
         }
+
+        return moss;
     }
 
     // Khối mịn tròn trịa kiểu tranh vẽ, màu đỉnh gần trung tính để texture quyết định màu

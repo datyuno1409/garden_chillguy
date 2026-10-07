@@ -1,13 +1,15 @@
 using UnityEngine;
 
-// Điều khiển độ phủ rêu (0..1) của mọi renderer con dùng shader Garden/RockMoss.
-// Giá trị này sau này sẽ được nối với số ngày trôi qua; hiện chỉnh tay ở Inspector để xem rêu mọc.
+// Điều khiển rêu của mọi renderer con dùng shader Garden/RockMoss: độ phủ (0..1) và hạt giống loang.
+// Độ phủ do GardenGrowthSystem đặt theo số ngày; ở Editor có thể kéo thanh trượt để xem thử.
 [ExecuteAlways]
 public class MossGrowth : MonoBehaviour
 {
     static readonly int CoverageId = Shader.PropertyToID("_MossCoverage");
+    static readonly int SeedId = Shader.PropertyToID("_MossSeed");
 
     [SerializeField, Range(0f, 1f)] float coverage = 0.6f;
+    [SerializeField] float seed;
 
     MaterialPropertyBlock block;
 
@@ -17,6 +19,17 @@ public class MossGrowth : MonoBehaviour
         set
         {
             coverage = Mathf.Clamp01(value);
+            Apply();
+        }
+    }
+
+    // Mỗi vườn một hạt giống: các mảng rêu loang theo kiểu khác nhau
+    public float Seed
+    {
+        get => seed;
+        set
+        {
+            seed = value;
             Apply();
         }
     }
@@ -36,6 +49,7 @@ public class MossGrowth : MonoBehaviour
 
             target.GetPropertyBlock(block);
             block.SetFloat(CoverageId, coverage);
+            block.SetFloat(SeedId, seed);
             target.SetPropertyBlock(block);
         }
     }

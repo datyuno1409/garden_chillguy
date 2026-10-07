@@ -43,6 +43,8 @@ Material:
     - _MossCoverage: 1
     - _MossEdgeSoftness: 0.08
     - _MossFuzz: 0.25
+    - _MossSeed: 0
+    - _MossThickness: 0.04
     - _MossTiling: 1.2
     - _MossUpBias: 0.55
     - _RimPower: 3
@@ -51,6 +53,7 @@ Material:
     - _Softness: 0.18
     - _UseUV: 0
     - _VertexColorStrength: 0.6
+    - _WetHalo: 0.35
     m_Colors:
     - _MossColor: {r: 0.34, g: 0.58, b: 0.2, a: 1}
     - _MossLightColor: {r: 0.5, g: 0.74, b: 0.27, a: 1}

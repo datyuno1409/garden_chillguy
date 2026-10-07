@@ -45,4 +45,16 @@ half4 SampleTriplanar(TEXTURE2D_PARAM(tex, samp), float3 positionWS, half3 norma
     return fromX * weights.x + fromY * weights.y + fromZ * weights.z;
 }
 
+// Bản dùng được trong vertex shader (không có đạo hàm nên chọn mức mip 0)
+half4 SampleTriplanarLod(TEXTURE2D_PARAM(tex, samp), float3 positionWS, half3 normalWS, float tiling)
+{
+    half3 weights = pow(abs(normalWS), 4.0h);
+    weights /= (weights.x + weights.y + weights.z + 1e-4h);
+
+    half4 fromX = SAMPLE_TEXTURE2D_LOD(tex, samp, positionWS.zy * tiling, 0);
+    half4 fromY = SAMPLE_TEXTURE2D_LOD(tex, samp, positionWS.xz * tiling, 0);
+    half4 fromZ = SAMPLE_TEXTURE2D_LOD(tex, samp, positionWS.xy * tiling, 0);
+    return fromX * weights.x + fromY * weights.y + fromZ * weights.z;
+}
+
 #endif

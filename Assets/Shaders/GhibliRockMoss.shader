@@ -1,5 +1,6 @@
 // Đá phủ rêu: hai texture (đá, rêu) và một mặt nạ rêu, độ phủ rêu chỉnh được từ 0 đến 1 (rêu mọc dần theo ngày).
 // Rêu bám trước ở mặt hướng lên và ở chỗ mặt nạ cao; độ phủ tăng thì loang dần ra khắp đá.
+// Rêu dày lên khỏi mặt đá, quanh mép rêu đá sẫm màu như bị ẩm, mép rêu hơi tối để có khối.
 // Mặc định lấy mẫu texture theo 3 mặt phẳng nên mesh chưa có UV vẫn dùng được; mesh đã có UV thì bật Use UV.
 Shader "Garden/RockMoss"
 {
@@ -12,15 +13,18 @@ Shader "Garden/RockMoss"
 
         [Header(Moss)]
         _MossTex ("Moss Albedo", 2D) = "white" {}
-        _MossColor ("Moss Tint (phần thấp)", Color) = (0.42, 0.7, 0.24, 1)
-        _MossLightColor ("Moss Tint (phần cao, sáng hơn)", Color) = (0.62, 0.86, 0.32, 1)
+        _MossColor ("Moss Tint (phần thấp)", Color) = (0.34, 0.58, 0.2, 1)
+        _MossLightColor ("Moss Tint (phần cao, sáng hơn)", Color) = (0.5, 0.74, 0.27, 1)
         _MossTiling ("Moss Tiling (lặp mỗi mét)", Float) = 1.2
         _MossMask ("Moss Mask (R = mảng rêu, G = lông mịn ở mép)", 2D) = "white" {}
         _MaskTiling ("Mask Tiling (lặp mỗi mét)", Float) = 0.3
         _MossCoverage ("Moss Coverage (độ phủ rêu)", Range(0, 1)) = 0.6
+        _MossSeed ("Moss Seed (mỗi vườn một kiểu loang)", Float) = 0
         _MossUpBias ("Up Bias (rêu thích mặt hướng lên)", Range(0, 1)) = 0.55
         _MossEdgeSoftness ("Moss Edge Softness", Range(0.01, 0.3)) = 0.08
         _MossFuzz ("Moss Fuzzy Edge", Range(0, 0.6)) = 0.25
+        _MossThickness ("Moss Thickness (mét, rêu dày lên khỏi mặt đá)", Range(0, 0.15)) = 0.04
+        _WetHalo ("Wet Halo (đá sẫm quanh mép rêu)", Range(0, 1)) = 0.35
 
         [Header(Lighting)]
         _ShadeColor ("Shade Tint", Color) = (0.62, 0.66, 0.82, 1)
@@ -67,10 +71,13 @@ Shader "Garden/RockMoss"
                 float _RockTiling;
                 float _MossTiling;
                 float _MaskTiling;
+                float _MossSeed;
                 half _MossCoverage;
                 half _MossUpBias;
                 half _MossEdgeSoftness;
                 half _MossFuzz;
+                half _MossThickness;
+                half _WetHalo;
                 half _VertexColorStrength;
                 half _Bands;
                 half _Softness;
@@ -97,12 +104,41 @@ Shader "Garden/RockMoss"
                 half4 color : COLOR;
             };
 
+            // Dịch vị trí lấy mẫu mặt nạ theo hạt giống để mỗi vườn có các mảng rêu khác nhau
+            float3 SeedShift() { return float3(_MossSeed * 3.7, _MossSeed * 1.3, _MossSeed * 2.9); }
+
+            // Điểm "dễ có rêu" (mặt hướng lên, mảng rêu trong mặt nạ, lông mịn ở mép) so với ngưỡng theo độ phủ.
+            // Trả về lượng rêu 0..1 và, qua score/threshold, khoảng cách tới mép rêu.
+            half MossAmount(half4 mask, half3 normalWS, out half score, out half threshold)
+            {
+                half upFacing = saturate(normalWS.y);
+                score = lerp(mask.r, upFacing, _MossUpBias);
+                score += (mask.g - 0.5h) * _MossFuzz;
+
+                // Độ phủ càng cao thì ngưỡng càng thấp, rêu loang ra: 0 = không có rêu, 1 = phủ kín.
+                // Lấy luỹ thừa 0.6 để độ phủ nhỏ đã thấy vài đốm rêu (ngày đầu), còn độ phủ cao thì loang chậm lại.
+                half shaped = pow(saturate(_MossCoverage), 0.6h);
+                threshold = lerp(1.05h, -0.15h, shaped);
+                return smoothstep(threshold - _MossEdgeSoftness, threshold + _MossEdgeSoftness, score);
+            }
+
             Varyings Vert(Attributes input)
             {
                 Varyings output;
-                output.positionWS = TransformObjectToWorld(input.positionOS.xyz);
-                output.positionCS = TransformWorldToHClip(output.positionWS);
-                output.normalWS = TransformObjectToWorldNormal(input.normalOS);
+                float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
+                half3 normalWS = TransformObjectToWorldNormal(input.normalOS);
+
+                // Rêu dày lên khỏi mặt đá: đẩy đỉnh ra theo pháp tuyến ở chỗ có rêu
+                half4 mask = _UseUV > 0.5h
+                    ? SAMPLE_TEXTURE2D_LOD(_MossMask, sampler_MossMask, (input.uv + _MossSeed * 0.137) * _MaskTiling, 0)
+                    : SampleTriplanarLod(TEXTURE2D_ARGS(_MossMask, sampler_MossMask), positionWS + SeedShift(), normalWS, _MaskTiling);
+                half score, threshold;
+                half moss = MossAmount(mask, normalWS, score, threshold);
+                float3 displaced = positionWS + normalWS * (moss * _MossThickness);
+
+                output.positionWS = positionWS;
+                output.positionCS = TransformWorldToHClip(displaced);
+                output.normalWS = normalWS;
                 output.uv = input.uv;
                 output.color = input.color;
                 return output;
@@ -118,26 +154,28 @@ Shader "Garden/RockMoss"
                 {
                     rock = SAMPLE_TEXTURE2D(_RockTex, sampler_RockTex, input.uv * _RockTiling);
                     moss = SAMPLE_TEXTURE2D(_MossTex, sampler_MossTex, input.uv * _MossTiling);
-                    mask = SAMPLE_TEXTURE2D(_MossMask, sampler_MossMask, input.uv * _MaskTiling);
+                    mask = SAMPLE_TEXTURE2D(_MossMask, sampler_MossMask, (input.uv + _MossSeed * 0.137) * _MaskTiling);
                 }
                 else
                 {
                     rock = SampleTriplanar(TEXTURE2D_ARGS(_RockTex, sampler_RockTex), input.positionWS, normalWS, _RockTiling);
                     moss = SampleTriplanar(TEXTURE2D_ARGS(_MossTex, sampler_MossTex), input.positionWS, normalWS, _MossTiling);
-                    mask = SampleTriplanar(TEXTURE2D_ARGS(_MossMask, sampler_MossMask), input.positionWS, normalWS, _MaskTiling);
+                    mask = SampleTriplanar(TEXTURE2D_ARGS(_MossMask, sampler_MossMask), input.positionWS + SeedShift(), normalWS, _MaskTiling);
                 }
 
-                // Điểm "dễ có rêu": mặt hướng lên và mảng rêu trong mặt nạ; lông mịn ở mép từ kênh G
+                half score, threshold;
+                half mossAmount = MossAmount(mask, normalWS, score, threshold);
                 half upFacing = saturate(normalWS.y);
-                half score = lerp(mask.r, upFacing, _MossUpBias);
-                score += (mask.g - 0.5h) * _MossFuzz;
 
-                // Độ phủ càng cao thì ngưỡng càng thấp, rêu loang ra: 0 = không có rêu, 1 = phủ kín
-                half threshold = lerp(1.15h, -0.15h, _MossCoverage);
-                half mossAmount = smoothstep(threshold - _MossEdgeSoftness, threshold + _MossEdgeSoftness, score);
-
+                // Đá sẫm lại ở vùng sát mép rêu, như chỗ đá bị ẩm do rêu giữ nước
                 half3 rockColor = rock.rgb * _RockColor.rgb;
+                half nearMoss = smoothstep(threshold - 0.3h, threshold, score) * (1.0h - mossAmount);
+                rockColor *= 1.0h - nearMoss * _WetHalo * 0.5h;
+
+                // Rêu sáng ở phần cao, mép rêu tối nhẹ để trông có khối
                 half3 mossColor = moss.rgb * lerp(_MossColor.rgb, _MossLightColor.rgb, upFacing);
+                mossColor *= lerp(0.8h, 1.0h, smoothstep(0.0h, 0.6h, mossAmount));
+
                 half3 albedo = lerp(rockColor, mossColor, mossAmount);
 
                 // Màu đỉnh (lưu ở nửa giá trị) để chỉnh sáng tối từng chỗ
