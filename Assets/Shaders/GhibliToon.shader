@@ -1,5 +1,6 @@
 // Shader toon kiểu Ghibli cho URP: ánh sáng chia dải mềm, bóng ngả màu lạnh, viền sáng nhẹ, gió lay lá.
-// Màu đỉnh (vertex color): rgb nhân vào màu gốc để tạo biến thiên, alpha là mức lay động theo gió.
+// Màu đỉnh (vertex color): rgb nhân vào màu gốc để tạo biến thiên (lưu ở nửa giá trị, 0.5 = giữ nguyên),
+// alpha là mức lay động theo gió.
 Shader "Garden/GhibliToon"
 {
     Properties
@@ -35,8 +36,7 @@ Shader "Garden/GhibliToon"
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
 
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "Assets/Shaders/GhibliToonCommon.hlsl"
 
             CBUFFER_START(UnityPerMaterial)
                 half4 _BaseColor;
@@ -67,15 +67,6 @@ Shader "Garden/GhibliToon"
                 half4 color : COLOR;
             };
 
-            // Biến độ sáng liên tục thành các dải, mép mỗi dải được làm mềm
-            half Banded(half x, half bands, half softness)
-            {
-                half scaled = x * bands;
-                half band = floor(scaled);
-                half edge = smoothstep(0.5h - softness, 0.5h + softness, frac(scaled));
-                return saturate((band + edge) / bands);
-            }
-
             Varyings Vert(Attributes input)
             {
                 Varyings output;
@@ -96,25 +87,11 @@ Shader "Garden/GhibliToon"
 
             half4 Frag(Varyings input) : SV_Target
             {
-                half3 normalWS = normalize(input.normalWS);
-
-                Light mainLight = GetMainLight(TransformWorldToShadowCoord(input.positionWS));
-                half halfLambert = dot(normalWS, mainLight.direction) * 0.5h + 0.5h;
-                half lit = Banded(halfLambert * mainLight.shadowAttenuation, _Bands, _Softness);
-
-                // Màu đỉnh được lưu ở nửa giá trị (0.5 = giữ nguyên) để chứa được hệ số sáng hơn 1
                 half3 vertexTint = lerp(half3(1, 1, 1), input.color.rgb * 2.0h, _VertexColorStrength);
                 half3 albedo = _BaseColor.rgb * vertexTint;
-                half3 shade = albedo * _ShadeColor.rgb;
-                half3 lightTint = lerp(half3(1, 1, 1), mainLight.color, 0.6h);
 
-                half3 color = lerp(shade, albedo * lightTint, lit);
-                color += albedo * SampleSH(normalWS) * _AmbientStrength;
-
-                half3 viewDirWS = GetWorldSpaceNormalizeViewDir(input.positionWS);
-                half rim = pow(1.0h - saturate(dot(normalWS, viewDirWS)), _RimPower) * _RimStrength;
-                color += _RimColor.rgb * rim * saturate(halfLambert);
-
+                half3 color = ToonLighting(albedo, _ShadeColor.rgb, normalize(input.normalWS), input.positionWS,
+                    _Bands, _Softness, _AmbientStrength, _RimColor.rgb, _RimPower, _RimStrength);
                 return half4(color, 1);
             }
             ENDHLSL

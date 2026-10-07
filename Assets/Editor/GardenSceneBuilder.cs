@@ -6,8 +6,9 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 
-// Menu Tools/Garden/3. Build garden scene: dựng góc vườn đá theo ảnh tham chiếu vào scene "cozy garden".
-// Chạy lại được nhiều lần: xoá nhóm "Garden" cũ và dựng lại. Không đụng _Manager (cửa sổ PIP) và camera/ánh sáng sẵn có.
+// Menu Tools/Garden/3. Build garden scene: dựng góc vườn nhỏ với tảng đá phủ rêu vào scene "cozy garden".
+// Chạy lại được nhiều lần: xoá nhóm "Garden" cũ và dựng lại. Không đụng _Manager (cửa sổ PIP).
+// Không ghi đè texture hay thiết lập vật liệu đá/rêu mà bạn đã chỉnh (chỉ tạo khi chưa có).
 public static class GardenSceneBuilder
 {
     const string ScenePath = "Assets/cozy garden.unity";
@@ -17,21 +18,31 @@ public static class GardenSceneBuilder
     const string VolumePath = "Assets/Garden/GardenVolume.asset";
 
     static readonly Color ShadeCool = new Color(0.62f, 0.66f, 0.82f);
+    static readonly Vector3 CameraTarget = new Vector3(0f, 1.05f, 0f);   // tâm tảng đá chính
 
     [MenuItem("Tools/Garden/3. Build garden scene")]
     public static void Build()
     {
+        GardenTextureGenerator.EnsureAll();
+
         Scene scene = OpenScene(out bool openedByUs);
+        if (HasHandMadeMeshes(scene))
+        {
+            Debug.LogWarning("GardenSceneBuilder: có tảng đá đang dùng mô hình bạn gán (Override Mesh). " +
+                "Dựng lại sẽ xóa chúng nên đã dừng. Gỡ mô hình đó ra khỏi nhóm Garden (hoặc xóa ô Override Mesh) rồi chạy lại.");
+            if (openedByUs) EditorSceneManager.CloseScene(scene, true);
+            return;
+        }
         DestroyOld(scene);
 
         var root = new GameObject(RootName);
-        SceneManager_Move(root, scene);
+        SceneManager.MoveGameObjectToScene(root, scene);
 
-        var materials = CreateMaterials();
+        Materials materials = CreateMaterials();
         BuildGround(root.transform, materials);
         BuildRocks(root.transform, materials);
-        BuildPlants(root.transform, materials);
-        BuildBackdrop(root.transform, materials);
+        BuildDetails(root.transform, materials);
+        BuildFramingLeaves(root.transform, materials);
         SetupLighting();
         SetupCamera();
         SetupPostProcessing(root.transform);
@@ -48,33 +59,54 @@ public static class GardenSceneBuilder
 
     struct Materials
     {
-        public Material rock, lawn, gravel, pebbles, shrub, shrubDark, maple, grass, flowers, wood, wall, paver, trunk;
+        public Material rockMoss, mossGround, grass, mushroomCap, mushroomStem, leaf, backdrop, ground;
     }
 
     static Materials CreateMaterials()
     {
         Directory.CreateDirectory(MaterialDir);
-        Shader shader = Shader.Find("Garden/GhibliToon");
+        Shader toon = Shader.Find("Garden/GhibliToon");
+        Shader rockMoss = Shader.Find("Garden/RockMoss");
 
         return new Materials
         {
-            rock = Mat(shader, "Rock", new Color(0.66f, 0.63f, 0.58f), vertexStrength: 1f, rim: 0.3f),
-            lawn = Mat(shader, "Lawn", new Color(0.38f, 0.6f, 0.24f), vertexStrength: 1f, rim: 0.12f),
-            gravel = Mat(shader, "Gravel", new Color(0.55f, 0.53f, 0.49f), vertexStrength: 0f),
-            pebbles = Mat(shader, "Pebbles", Color.white, vertexStrength: 1f, rim: 0.1f),
-            shrub = Mat(shader, "Shrub", new Color(0.3f, 0.58f, 0.24f), vertexStrength: 1f, wind: 0.05f),
-            shrubDark = Mat(shader, "ShrubDark", new Color(0.2f, 0.46f, 0.22f), vertexStrength: 1f, wind: 0.04f),
-            maple = Mat(shader, "Maple", new Color(0.5f, 0.2f, 0.2f), vertexStrength: 1f, wind: 0.05f),
-            grass = Mat(shader, "Grass", new Color(0.5f, 0.78f, 0.3f), vertexStrength: 1f, wind: 0.22f, cullOff: true),
-            flowers = Mat(shader, "Flowers", Color.white, vertexStrength: 1f, rim: 0.2f, wind: 0.03f),
-            wood = Mat(shader, "Wood", new Color(0.55f, 0.38f, 0.25f), vertexStrength: 0f),
-            wall = Mat(shader, "Wall", new Color(0.62f, 0.68f, 0.74f), vertexStrength: 0f),
-            paver = Mat(shader, "Paver", new Color(0.55f, 0.55f, 0.55f), vertexStrength: 0f),
-            trunk = Mat(shader, "Trunk", new Color(0.36f, 0.25f, 0.2f), vertexStrength: 0f),
+            rockMoss = RockMossMat(rockMoss, "RockMoss", coverage: 0.6f),
+            mossGround = RockMossMat(rockMoss, "MossGround", coverage: 1f),
+            grass = ToonMat(toon, "Grass", new Color(0.5f, 0.78f, 0.3f), vertexStrength: 1f, wind: 0.22f, cullOff: true),
+            mushroomCap = ToonMat(toon, "MushroomCap", new Color(0.88f, 0.28f, 0.17f), vertexStrength: 1f, rim: 0.3f),
+            mushroomStem = ToonMat(toon, "MushroomStem", new Color(0.96f, 0.9f, 0.76f), vertexStrength: 1f),
+            leaf = ToonMat(toon, "LeafPlaceholder", new Color(0.3f, 0.55f, 0.22f), vertexStrength: 1f, wind: 0.04f, cullOff: true),
+            backdrop = ToonMat(toon, "Backdrop", new Color(0.07f, 0.2f, 0.13f), vertexStrength: 0f, rim: 0f),
+            ground = ToonMat(toon, "Ground", new Color(0.1f, 0.26f, 0.15f), vertexStrength: 0f, rim: 0f),
         };
     }
 
-    static Material Mat(Shader shader, string name, Color baseColor, float vertexStrength, float rim = 0.2f,
+    // Đá phủ rêu: chỉ tạo giá trị mặc định lần đầu, sau đó giữ nguyên những gì bạn đã chỉnh
+    static Material RockMossMat(Shader shader, string name, float coverage)
+    {
+        string path = $"{MaterialDir}/{name}.mat";
+        var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (material == null)
+        {
+            material = new Material(shader);
+            AssetDatabase.CreateAsset(material, path);
+            material.SetFloat("_MossCoverage", coverage);
+        }
+
+        SetTextureIfEmpty(material, "_RockTex", GardenTextureGenerator.RockPath);
+        SetTextureIfEmpty(material, "_MossTex", GardenTextureGenerator.MossPath);
+        SetTextureIfEmpty(material, "_MossMask", GardenTextureGenerator.MaskPath);
+        EditorUtility.SetDirty(material);
+        return material;
+    }
+
+    static void SetTextureIfEmpty(Material material, string property, string assetPath)
+    {
+        if (material.GetTexture(property) != null) return;
+        material.SetTexture(property, AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath));
+    }
+
+    static Material ToonMat(Shader shader, string name, Color baseColor, float vertexStrength, float rim = 0.2f,
         float wind = 0f, bool cullOff = false)
     {
         string path = $"{MaterialDir}/{name}.mat";
@@ -96,35 +128,32 @@ public static class GardenSceneBuilder
         return material;
     }
 
-    // ---------- Mặt đất ----------
+    // ---------- Mặt đất và nền ----------
 
+    // Nền xanh thẫm mờ phía sau (như tán lá tối trong ảnh mẫu), không có bụi cây nào
     static void BuildGround(Transform parent, Materials m)
     {
         var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        Prepare(ground, "GravelBed", parent, new Vector3(0f, 0f, 6f), m.gravel);
-        ground.transform.localScale = new Vector3(6f, 1f, 4f);   // 60 x 40 m, đủ rộng để không thấy mép
+        Prepare(ground, "Ground", parent, new Vector3(0f, -0.4f, 4f), m.ground);
+        ground.transform.localScale = new Vector3(4f, 1f, 4f);
 
-        // Sỏi: gộp nhiều viên vào một mesh
-        var pebbles = NewEmpty("Pebbles", parent, new Vector3(0.6f, 0f, -0.4f), m.pebbles);
-        pebbles.AddComponent<BlobScatter>().Apply(ScatterSettings.Pebbles(4, new Vector2(10f, 6.5f), 1100));
+        var backdrop = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        Prepare(backdrop, "Backdrop", parent, new Vector3(0f, 4f, 7f), m.backdrop);
+        backdrop.transform.localScale = new Vector3(24f, 14f, 1f);
 
-        // Bãi cỏ phía trước: một mô đất dẹt có viền tự nhiên
-        var lawn = NewBlob("Lawn", parent, new Vector3(-2.6f, -0.12f, -3.0f), new Vector3(3.6f, 0.3f, 2.4f), m.lawn,
-            new BlobSettings
-            {
-                shape = new BlobShape { seed = 9, subdivisions = 4, noiseAmplitude = 0.07f, noiseFrequency = 1.1f, flattenBottom = 0f, flatShaded = false },
-                topTint = new Color(1.12f, 1.1f, 0.85f), bottomTint = new Color(0.8f, 0.9f, 0.7f), colorNoise = 0.08f, sway = 0f,
-            });
-        lawn.name = "Lawn";
+        // Mô đất rêu mà tảng đá nằm trên: luôn phủ kín rêu
+        NewBlob("MossMound", parent, MoundCenter, MoundSize, m.mossGround, Soft(seed: 5, amplitude: 0.05f, subdivisions: 4));
+    }
 
-        // Vài viên gạch lát lối đi ở góc dưới bên phải
-        for (int i = 0; i < 4; i++)
-        {
-            var paver = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            Prepare(paver, "Paver" + i, parent, new Vector3(2.6f + i * 0.55f, 0.03f, -3.2f + i * 0.65f), m.paver);
-            paver.transform.localScale = new Vector3(0.95f, 0.07f, 0.55f);
-            paver.transform.rotation = Quaternion.Euler(0f, 12f + i * 3f, 0f);
-        }
+    static readonly Vector3 MoundCenter = new Vector3(0f, -0.28f, 0.2f);
+    static readonly Vector3 MoundSize = new Vector3(4.6f, 0.7f, 3.4f);
+
+    // Độ cao gần đúng của mô đất tại (x, z), để đặt nấm và cỏ lên mặt mô đất
+    static float MoundHeight(float x, float z)
+    {
+        float dx = (x - MoundCenter.x) / MoundSize.x;
+        float dz = (z - MoundCenter.z) / MoundSize.z;
+        return MoundCenter.y + MoundSize.y * Mathf.Sqrt(Mathf.Max(0f, 1f - dx * dx - dz * dz));
     }
 
     // ---------- Đá ----------
@@ -133,77 +162,75 @@ public static class GardenSceneBuilder
     {
         var rocks = new GameObject("Rocks").transform;
         rocks.SetParent(parent, false);
+        rocks.gameObject.AddComponent<MossGrowth>().Coverage = 0.6f;
 
-        // x, z, bán kính x/y/z, seed
+        // x, z, bán kính x/y/z, seed. Tảng đầu tiên là tảng chính ở giữa.
         float[][] layout =
         {
-            new[] { 0.1f, -0.2f, 1.3f, 0.8f, 1.05f, 3f },
-            new[] { -1.9f, 0.3f, 0.95f, 0.7f, 0.85f, 7f },
-            new[] { -2.7f, 1.2f, 0.9f, 0.8f, 0.8f, 11f },
-            new[] { 1.9f, -0.1f, 0.85f, 0.65f, 0.8f, 5f },
-            new[] { 2.4f, 0.9f, 0.9f, 0.8f, 0.8f, 13f },
-            new[] { -0.2f, 1.3f, 0.7f, 0.5f, 0.6f, 31f },
-            new[] { 0.9f, -1.35f, 0.6f, 0.38f, 0.5f, 17f },
-            new[] { -0.9f, -1.0f, 0.5f, 0.35f, 0.45f, 19f },
-            new[] { -1.5f, -0.9f, 0.38f, 0.26f, 0.34f, 23f },
-            new[] { 1.7f, -1.2f, 0.35f, 0.26f, 0.32f, 29f },
+            new[] { 0.0f, 0.3f, 2.15f, 1.55f, 1.8f, 3f },
+            new[] { -2.45f, -0.6f, 0.65f, 0.42f, 0.55f, 7f },
+            new[] { 2.35f, -0.9f, 0.55f, 0.38f, 0.5f, 11f },
+            new[] { -1.3f, -2.1f, 0.38f, 0.27f, 0.34f, 17f },
+            new[] { 1.5f, -2.3f, 0.3f, 0.22f, 0.28f, 19f },
         };
 
         foreach (float[] r in layout)
         {
-            BlobSettings settings = BlobSettings.Rock((int)r[5]);
+            BlobSettings settings = Soft((int)r[5], amplitude: 0.11f, subdivisions: 4);
+            settings.shape.flattenBottom = 0.3f;
             var scale = new Vector3(r[2], r[3], r[4]);
-            float y = scale.y * (1f - settings.shape.flattenBottom) - 0.08f;   // đáy hơi lún xuống đất
+            float y = MoundHeight(r[0], r[1]) + scale.y * (1f - settings.shape.flattenBottom) - 0.35f;   // đáy lún vào rêu
 
-            GameObject rock = NewBlob("Rock_" + (int)r[5], rocks, new Vector3(r[0], y, r[1]), scale, m.rock, settings);
+            GameObject rock = NewBlob("Rock_" + (int)r[5], rocks, new Vector3(r[0], y, r[1]), scale, m.rockMoss, settings);
             rock.transform.rotation = Quaternion.Euler(0f, r[5] * 23f, 0f);
         }
     }
 
-    // ---------- Cây cỏ hoa ----------
-
-    static void BuildPlants(Transform parent, Materials m)
+    // Khối mịn tròn trịa kiểu tranh vẽ, màu đỉnh gần trung tính để texture quyết định màu
+    static BlobSettings Soft(int seed, float amplitude, int subdivisions) => new BlobSettings
     {
-        var plants = new GameObject("Plants").transform;
-        plants.SetParent(parent, false);
-
-        // Cẩm tú cầu trắng bên phải: cụm hoa nhỏ rải dày trên bụi
-        Bush(plants, "Hydrangea", new Vector3(1.7f, 1.0f, 2.4f), new Vector3(1.0f, 0.85f, 0.9f), m.shrub, m.flowers, 41,
-            ScatterSettings.Blossoms(5, 1.0f, 36, new Vector2(0.12f, 0.2f), new Color(0.97f, 0.96f, 0.9f), new Color(0.92f, 0.94f, 0.88f), new Color(0.98f, 0.97f, 0.95f)));
-
-        // Hoa san hô / đỏ ở giữa phía sau đá
-        Bush(plants, "CoralFlowers", new Vector3(-0.1f, 0.95f, 2.1f), new Vector3(0.8f, 0.6f, 0.7f), m.shrub, m.flowers, 47,
-            ScatterSettings.Blossoms(6, 1.0f, 26, new Vector2(0.09f, 0.15f), new Color(0.93f, 0.4f, 0.3f), new Color(0.96f, 0.55f, 0.4f), new Color(0.85f, 0.3f, 0.3f)));
-
-        // Oải hương tím
-        Bush(plants, "Lavender", new Vector3(-1.5f, 0.7f, 1.6f), new Vector3(0.55f, 0.45f, 0.5f), m.shrubDark, m.flowers, 53,
-            ScatterSettings.Blossoms(7, 1.0f, 30, new Vector2(0.06f, 0.1f), new Color(0.6f, 0.45f, 0.82f), new Color(0.5f, 0.38f, 0.75f)));
-
-        // Cỏ trang trí cao nổi bật phía sau đá, và cỏ nhỏ chen quanh đá
-        Grass(plants, new Vector3(-0.9f, 0f, 1.0f), GrassSettings.Clump(11, 1.5f, 0.55f, 160), m.grass);
-        Grass(plants, new Vector3(0.9f, 0f, 0.9f), GrassSettings.Clump(12, 1.35f, 0.5f, 150), m.grass);
-        Grass(plants, new Vector3(0.3f, 0f, 2.0f), GrassSettings.Clump(13, 1.2f, 0.5f, 110), m.grass);
-        Grass(plants, new Vector3(-2.3f, 0f, 2.0f), GrassSettings.Clump(14, 1.3f, 0.55f, 120), m.grass);
-        Grass(plants, new Vector3(-1.2f, 0f, -1.3f), GrassSettings.Clump(15, 0.4f, 0.25f, 40), m.grass);
-        Grass(plants, new Vector3(1.2f, 0f, -0.9f), GrassSettings.Clump(16, 0.45f, 0.25f, 40), m.grass);
-        Grass(plants, new Vector3(-3.5f, 0.1f, -1.2f), GrassSettings.Clump(17, 0.35f, 0.4f, 45), m.grass);
-
-        // Mép bãi cỏ
-        for (int i = 0; i < 6; i++)
+        shape = new BlobShape
         {
-            Grass(plants, new Vector3(-4.8f + i * 0.9f, 0.1f, -2.0f - (i % 2) * 0.5f),
-                GrassSettings.Clump(30 + i, 0.3f, 0.3f, 30), m.grass);
+            seed = seed, subdivisions = subdivisions, noiseAmplitude = amplitude, noiseFrequency = 1.1f,
+            flattenBottom = 0f, flatShaded = false,
+        },
+        topTint = new Color(1.06f, 1.05f, 1f), bottomTint = new Color(0.82f, 0.84f, 0.88f),
+        colorNoise = 0.04f, sway = 0f,
+    };
+
+    // ---------- Nấm và cỏ nhỏ ----------
+
+    static void BuildDetails(Transform parent, Materials m)
+    {
+        var details = new GameObject("Details").transform;
+        details.SetParent(parent, false);
+
+        // x, z, kích thước
+        float[][] mushrooms = { new[] { -1.65f, -1.45f, 1f }, new[] { 1.85f, -1.5f, 0.9f }, new[] { 2.1f, -1.25f, 0.55f } };
+        for (int i = 0; i < mushrooms.Length; i++)
+        {
+            float x = mushrooms[i][0], z = mushrooms[i][1], size = mushrooms[i][2];
+            float ground = MoundHeight(x, z);
+            NewBlob("MushroomStem" + i, details, new Vector3(x, ground + 0.1f * size, z), new Vector3(0.05f, 0.11f, 0.05f) * size,
+                m.mushroomStem, Soft(30 + i, 0.05f, 2));
+            NewBlob("MushroomCap" + i, details, new Vector3(x, ground + 0.21f * size, z), new Vector3(0.15f, 0.1f, 0.15f) * size,
+                m.mushroomCap, CapSettings(40 + i));
+        }
+
+        // Vài bụi cỏ nhỏ quanh chân tảng đá
+        float[][] tufts = { new[] { -1.9f, -0.5f }, new[] { 1.7f, -0.3f }, new[] { -0.6f, -2.0f }, new[] { 0.9f, -1.7f }, new[] { 2.4f, -0.5f } };
+        for (int i = 0; i < tufts.Length; i++)
+        {
+            Grass(details, new Vector3(tufts[i][0], MoundHeight(tufts[i][0], tufts[i][1]), tufts[i][1]),
+                GrassSettings.Clump(70 + i, 0.4f, 0.25f, 40), m.grass);
         }
     }
 
-    static void Bush(Transform parent, string name, Vector3 position, Vector3 scale, Material leaves, Material blossomMaterial,
-        int seed, ScatterSettings blossoms)
+    static BlobSettings CapSettings(int seed)
     {
-        GameObject bush = NewBlob(name, parent, position, scale, leaves, BlobSettings.Shrub(seed));
-
-        // Hoa bám trên bề mặt bụi: con của bụi nên theo cùng tỉ lệ
-        var flowerObject = NewEmpty(name + "_Blossoms", bush.transform, Vector3.zero, blossomMaterial);
-        flowerObject.AddComponent<BlobScatter>().Apply(blossoms);
+        BlobSettings settings = Soft(seed, 0.04f, 2);
+        settings.shape.flattenBottom = 0.45f;
+        return settings;
     }
 
     static void Grass(Transform parent, Vector3 position, GrassSettings settings, Material material)
@@ -212,37 +239,29 @@ public static class GardenSceneBuilder
         grass.AddComponent<GrassTuft>().Apply(settings);
     }
 
-    // ---------- Phông nền ----------
+    // ---------- Lá tạm ở rìa khung ----------
 
-    static void BuildBackdrop(Transform parent, Materials m)
+    // Lá phẳng đặt tạm ở rìa khung cho có chiều sâu. Bạn thay bằng lá làm trong Maya (xoá hoặc thay nhóm "Placeholders").
+    static void BuildFramingLeaves(Transform parent, Materials m)
     {
-        var backdrop = new GameObject("Backdrop").transform;
-        backdrop.SetParent(parent, false);
+        var placeholders = new GameObject("Placeholders").transform;
+        placeholders.SetParent(parent, false);
 
-        // Hàng rào gỗ bên trái, đủ dài để không lộ mép hai bên
-        for (int i = 0; i < 32; i++)
+        // vị trí, góc xoay (độ), kích thước
+        var leaves = new (Vector3 position, Vector3 euler, Vector3 scale)[]
         {
-            float x = -14f + i * 0.5f;
-            float height = 4.6f + (i % 3) * 0.08f;
-            var plank = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            Prepare(plank, "Plank" + i, backdrop, new Vector3(x, height * 0.5f, 6.2f), m.wood);
-            plank.transform.localScale = new Vector3(0.44f, height, 0.1f);
+            (new Vector3(-3.1f, 0.3f, -3.4f), new Vector3(-20f, 25f, 15f), new Vector3(0.85f, 0.05f, 0.5f)),
+            (new Vector3(3.2f, 0.3f, -3.4f), new Vector3(-15f, -30f, -10f), new Vector3(0.8f, 0.05f, 0.5f)),
+            (new Vector3(-3.3f, 3.0f, 2.0f), new Vector3(30f, 40f, 20f), new Vector3(1.1f, 0.05f, 0.65f)),
+            (new Vector3(3.2f, 2.6f, 1.5f), new Vector3(15f, -70f, -35f), new Vector3(1.0f, 0.05f, 0.6f)),
+        };
+
+        for (int i = 0; i < leaves.Length; i++)
+        {
+            GameObject leaf = NewBlob("LeafPlaceholder_" + i, placeholders, leaves[i].position, leaves[i].scale, m.leaf,
+                BlobSettings.Shrub(80 + i));
+            leaf.transform.rotation = Quaternion.Euler(leaves[i].euler);
         }
-
-        // Tường nhà xám xanh bên phải
-        var wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        Prepare(wall, "Wall", backdrop, new Vector3(8.6f, 2.5f, 6.3f), m.wall);
-        wall.transform.localScale = new Vector3(14.4f, 5f, 0.3f);
-
-        // Bụi cây lớn phía sau và cây phong đỏ ở góc trái
-        NewBlob("BackShrubL", backdrop, new Vector3(-3.0f, 1.0f, 3.9f), new Vector3(1.7f, 1.3f, 1.4f), m.shrub, BlobSettings.Shrub(61));
-        NewBlob("BackShrubC", backdrop, new Vector3(-0.2f, 1.2f, 4.5f), new Vector3(1.9f, 1.5f, 1.4f), m.shrubDark, BlobSettings.Shrub(62));
-        NewBlob("BackShrubR", backdrop, new Vector3(3.0f, 1.0f, 4.0f), new Vector3(1.6f, 1.2f, 1.3f), m.shrub, BlobSettings.Shrub(63));
-
-        var trunk = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        Prepare(trunk, "MapleTrunk", backdrop, new Vector3(-3.4f, 1.1f, 3.4f), m.trunk);
-        trunk.transform.localScale = new Vector3(0.18f, 1.1f, 0.18f);
-        NewBlob("Maple", backdrop, new Vector3(-3.4f, 2.7f, 3.4f), new Vector3(1.5f, 1.1f, 1.3f), m.maple, BlobSettings.Shrub(64));
     }
 
     // ---------- Ánh sáng, camera, hậu kỳ ----------
@@ -253,20 +272,21 @@ public static class GardenSceneBuilder
         if (sun != null)
         {
             sun.type = LightType.Directional;
-            sun.transform.rotation = Quaternion.Euler(48f, -32f, 0f);
-            sun.color = new Color(1f, 0.93f, 0.8f);
-            sun.intensity = 1.25f;
+            sun.transform.rotation = Quaternion.Euler(42f, -28f, 0f);
+            sun.color = new Color(1f, 0.94f, 0.8f);
+            sun.intensity = 1.15f;
             sun.shadows = LightShadows.Soft;
-            sun.shadowStrength = 0.85f;
+            sun.shadowStrength = 0.8f;
         }
 
-        // Ánh sáng môi trường 3 tầng: trời xanh nhạt, ngang tầm vàng xanh, mặt đất ấm
+        // Ánh sáng môi trường ngả xanh lá như đang ở dưới tán cây
         RenderSettings.ambientMode = AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor = new Color(0.62f, 0.78f, 0.95f);
-        RenderSettings.ambientEquatorColor = new Color(0.78f, 0.82f, 0.68f);
-        RenderSettings.ambientGroundColor = new Color(0.5f, 0.45f, 0.38f);
+        RenderSettings.ambientSkyColor = new Color(0.58f, 0.78f, 0.6f);
+        RenderSettings.ambientEquatorColor = new Color(0.5f, 0.7f, 0.45f);
+        RenderSettings.ambientGroundColor = new Color(0.28f, 0.38f, 0.22f);
     }
 
+    // Ống kính tele đứng xa, nhìn chếch nhẹ từ trên xuống, kết hợp làm mờ nền để cảnh trông như mô hình thu nhỏ trong tấm ảnh
     static void SetupCamera()
     {
         Camera camera = Camera.main;
@@ -276,10 +296,14 @@ public static class GardenSceneBuilder
             return;
         }
 
-        // Nhìn chếch từ trên xuống như ảnh tham chiếu, ống kính hơi tele cho cảm giác mô hình thu nhỏ
-        camera.transform.position = new Vector3(0f, 4.0f, -7.2f);
-        camera.transform.LookAt(new Vector3(0f, 0.9f, 1.6f));
-        camera.fieldOfView = 42f;
+        const float distance = 11f;
+        const float pitchDegrees = 12f;
+        float pitch = pitchDegrees * Mathf.Deg2Rad;
+        camera.transform.position = CameraTarget + new Vector3(0f, Mathf.Sin(pitch), -Mathf.Cos(pitch)) * distance;
+        camera.transform.LookAt(CameraTarget);
+        camera.fieldOfView = 30f;
+        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.backgroundColor = new Color(0.07f, 0.2f, 0.13f);
 
         var data = camera.GetUniversalAdditionalCameraData();
         data.renderPostProcessing = true;
@@ -293,25 +317,31 @@ public static class GardenSceneBuilder
         {
             profile = ScriptableObject.CreateInstance<VolumeProfile>();
             AssetDatabase.CreateAsset(profile, VolumePath);
-
-            var bloom = profile.Add<Bloom>(true);
-            bloom.threshold.Override(0.95f);
-            bloom.intensity.Override(0.28f);
-            bloom.scatter.Override(0.7f);
-
-            var colors = profile.Add<ColorAdjustments>(true);
-            colors.saturation.Override(14f);
-            colors.contrast.Override(6f);
-
-            var vignette = profile.Add<Vignette>(true);
-            vignette.intensity.Override(0.16f);
-
-            var tonemapping = profile.Add<Tonemapping>(true);
-            tonemapping.mode.Override(TonemappingMode.Neutral);
-
-            foreach (VolumeComponent component in profile.components) AssetDatabase.AddObjectToAsset(component, profile);
-            EditorUtility.SetDirty(profile);
         }
+
+        var bloom = Ensure<Bloom>(profile);
+        bloom.threshold.Override(0.95f);
+        bloom.intensity.Override(0.28f);
+        bloom.scatter.Override(0.7f);
+
+        var colors = Ensure<ColorAdjustments>(profile);
+        colors.saturation.Override(14f);
+        colors.contrast.Override(6f);
+
+        var vignette = Ensure<Vignette>(profile);
+        vignette.intensity.Override(0.22f);
+
+        var tonemapping = Ensure<Tonemapping>(profile);
+        tonemapping.mode.Override(TonemappingMode.Neutral);
+
+        // Làm mờ phía gần và phía xa tảng đá: tạo cảm giác mô hình thu nhỏ
+        var depth = Ensure<DepthOfField>(profile);
+        depth.mode.Override(DepthOfFieldMode.Bokeh);
+        depth.focusDistance.Override(11f);
+        depth.focalLength.Override(75f);
+        depth.aperture.Override(3.2f);
+
+        EditorUtility.SetDirty(profile);
 
         var volumeObject = new GameObject("PostProcessing");
         volumeObject.transform.SetParent(parent, false);
@@ -320,13 +350,21 @@ public static class GardenSceneBuilder
         volume.sharedProfile = profile;
     }
 
+    static T Ensure<T>(VolumeProfile profile) where T : VolumeComponent
+    {
+        if (profile.TryGet(out T existing)) return existing;
+        T created = profile.Add<T>(true);
+        AssetDatabase.AddObjectToAsset(created, profile);
+        return created;
+    }
+
     // Đổ bóng đủ dùng cho khung hình nhỏ, tiết kiệm GPU khi chạy cả ngày
     static void TuneRenderPipeline()
     {
         var pipeline = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(PipelineAssetPath);
         if (pipeline == null) return;
 
-        pipeline.shadowDistance = 16f;
+        pipeline.shadowDistance = 18f;
         pipeline.shadowCascadeCount = 2;
         EditorUtility.SetDirty(pipeline);
     }
@@ -362,24 +400,33 @@ public static class GardenSceneBuilder
         go.GetComponent<MeshRenderer>().sharedMaterial = material;
     }
 
-    static void SceneManager_Move(GameObject go, Scene scene)
-    {
-        UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, scene);
-    }
-
     static Scene OpenScene(out bool openedByUs)
     {
-        Scene existing = UnityEngine.SceneManagement.SceneManager.GetSceneByPath(ScenePath);
+        Scene existing = SceneManager.GetSceneByPath(ScenePath);
         openedByUs = !existing.isLoaded;
         return existing.isLoaded ? existing : EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Additive);
     }
 
-    // Xoá nhóm Garden cũ và quả bóng thử nghiệm
+    // Có khối nào trong nhóm Garden đang dùng mô hình do người dùng gán không (dựng lại sẽ làm mất)
+    static bool HasHandMadeMeshes(Scene scene)
+    {
+        foreach (GameObject root in scene.GetRootGameObjects())
+        {
+            if (root.name != RootName) continue;
+            foreach (ProceduralBlob blob in root.GetComponentsInChildren<ProceduralBlob>(true))
+            {
+                if (blob.HasOverrideMesh) return true;
+            }
+        }
+        return false;
+    }
+
+    // Xoá nhóm Garden cũ trước khi dựng lại
     static void DestroyOld(Scene scene)
     {
         foreach (GameObject root in scene.GetRootGameObjects())
         {
-            if (root.name == RootName || root.name == "Sphere") Object.DestroyImmediate(root);
+            if (root.name == RootName) Object.DestroyImmediate(root);
         }
     }
 }

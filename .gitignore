@@ -8,6 +8,10 @@
 [Uu]ser[Ss]ettings/
 MemoryCaptures/
 
+# File xuất ra cho Maya (sinh lại được bằng menu Tools/Garden) và ảnh tham chiếu của bên thứ ba
+Exports/
+Docs/reference/
+
 # Sinh lại được bằng ./update-graph.ps1 (graphify knowledge graph)
 graphify-out/
 

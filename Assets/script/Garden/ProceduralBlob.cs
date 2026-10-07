@@ -36,9 +36,17 @@ public class ProceduralBlob : MonoBehaviour
 {
     [SerializeField] BlobSettings settings = BlobSettings.Rock(1);
 
+    // Mesh thay thế: gán mô hình đã sửa trong Maya vào đây thì dùng nó thay cho mesh sinh bằng code
+    [SerializeField] Mesh overrideMesh;
+
     Mesh mesh;
 
     public BlobSettings Settings => settings;
+
+    public bool HasOverrideMesh => overrideMesh != null;
+
+    // Mesh đang sinh bằng code (null nếu đang dùng mesh thay thế)
+    public Mesh GeneratedMesh => overrideMesh == null ? mesh : null;
 
     public void Apply(BlobSettings newSettings)
     {
@@ -52,11 +60,17 @@ public class ProceduralBlob : MonoBehaviour
 
     void Rebuild()
     {
-        if (mesh == null)
+        var filter = GetComponent<MeshFilter>();
+
+        if (overrideMesh != null)
         {
-            mesh = new Mesh { name = "ProceduralBlob", hideFlags = HideFlags.HideAndDontSave };
-            GetComponent<MeshFilter>().sharedMesh = mesh;
+            DestroyMesh();
+            filter.sharedMesh = overrideMesh;
+            return;
         }
+
+        if (mesh == null) mesh = new Mesh { name = "ProceduralBlob", hideFlags = HideFlags.HideAndDontSave };
+        filter.sharedMesh = mesh;
 
         var data = new MeshData();
         BlobMeshBuilder.AppendBlob(data, settings.shape, Matrix4x4.identity, ColorAt);
