@@ -73,7 +73,7 @@ public class PipWindow : MonoBehaviour
 
     // Control Panel là app Unity riêng: tìm theo lớp cửa sổ và tên sản phẩm (xem PipBuild), file exe nằm cạnh thư mục Aquarium
     const string ControlPanelClass = "UnityWndClass";
-    const string ControlPanelTitle = "ControlPanel";
+    const string ControlPanelTitle = AppNames.ControlPanel;
     const string ControlPanelExePath = "../ControlPanel/ControlPanel.exe";
     const int SW_RESTORE = 9;
 

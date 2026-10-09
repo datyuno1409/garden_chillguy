@@ -64,7 +64,12 @@ namespace Garden.Core
         void OnApplicationQuit() { TrySave(); }
 
         // Người chơi click vào vườn: chuyển cho các mô-đun quan tâm
-        public int DispatchClick(GardenClick click) => ClickDispatcher.Dispatch(clickHandlers, click);
+        // Chưa chạy Start (ví dụ thử ở Editor) thì tìm mô-đun tại chỗ
+        public int DispatchClick(GardenClick click)
+        {
+            IGardenClickHandler[] handlers = clickHandlers.Length > 0 ? clickHandlers : GetComponentsInChildren<IGardenClickHandler>(true);
+            return ClickDispatcher.Dispatch(handlers, click);
+        }
 
         // Xem thử ở tuổi bất kỳ, dùng được cả ở Editor khi chưa chạy (menu Tools/Garden/Dev)
         public void PreviewAge(double ageDays)

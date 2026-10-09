@@ -11,6 +11,7 @@ Mô-đun rêu (`MossModule` trên `Garden/Rocks`, điều phối bởi `GardenHo
 ngày đầu vài đốm trên đỉnh đá, mọc chậm lúc đầu, nhanh ở giữa, chậm lại gần cuối; mặc định 14 ngày thì dừng ở độ phủ 0.5 (đỉnh và một phần thân phủ rêu, chân đá vẫn lộ).
 Chỉnh trong component `Moss Module` (object `Garden/Rocks`): `Settings` (days To Full Cover, start/max Coverage).
 
+- **Click phá rêu**: click chuột trái vào đá thì rêu quanh điểm đó bị bóc (bán kính `Hit Radius`, mặc định 0.45 m), lành dần sau `Heal Days` (mặc định 2 ngày). Chỉnh trong `Moss Module`. Vật liệu có `Damageable = 0` (mô đất nền) không bị bóc.
 - Trạng thái lưu ở `%LOCALAPPDATA%\GardenChill\garden_state.json` (bản build) và `garden_state.editor.json` (Editor). Hạt giống trong file quyết định kiểu loang của rêu, mỗi vườn một kiểu.
 - Xem thử không phải đợi: menu **Tools/Garden/Dev/Preview moss at day N**, hoặc chạy bản build với `Aquarium.exe -gardenAgeDays 7` (xem thử, không ghi file).
 - Muốn bắt đầu lại từ ngày 0: xóa file trên (hoặc menu **Tools/Garden/Dev/Reset editor garden state** cho Editor).

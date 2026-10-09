@@ -8,21 +8,27 @@ namespace Garden.Moss
         public float daysToFullCover;    // sau bao nhiêu ngày thì rêu phủ tới mức tối đa
         public float startCoverage;      // độ phủ lúc mới tạo vườn (vài đốm rêu nhỏ)
         public float maxCoverage;        // độ phủ tối đa (không phủ kín để còn thấy đá)
+        public float hitRadius;          // bán kính vết rêu bị bóc khi click (mét)
+        public float healDays;           // vết rêu bị bóc lành hẳn sau bao nhiêu ngày
 
         public static MossSettings Default => new MossSettings
         {
             daysToFullCover = 14f,
             startCoverage = 0.1f,
             maxCoverage = 0.5f,
+            hitRadius = 0.45f,
+            healDays = 2f,
         };
     }
 
     // Phần dữ liệu của rêu trong file lưu (mục "moss"). Tên field "ageDays" phải khớp với việc nâng cấp file bản 1
     // trong GardenStateMigrator; có test kiểm tra hai bên khớp nhau.
+    // Thêm field mới (như hits) không cần đổi phiên bản file: file cũ thiếu field thì nhận giá trị mặc định (hits = null).
     [Serializable]
     public struct MossSection
     {
         public double ageDays;
+        public MossHit[] hits;
     }
 
     // Logic thuần của rêu (không dùng Unity), nên kiểm thử được: tuổi rêu -> độ phủ rêu.

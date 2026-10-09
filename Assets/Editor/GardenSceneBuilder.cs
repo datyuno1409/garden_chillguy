@@ -76,8 +76,8 @@ public static class GardenSceneBuilder
 
         return new Materials
         {
-            rockMoss = RockMossMat(rockMoss, "RockMoss", coverage: 0.6f),
-            mossGround = RockMossMat(rockMoss, "MossGround", coverage: 1f),
+            rockMoss = RockMossMat(rockMoss, "RockMoss", coverage: 0.6f, damageable: 1f),
+            mossGround = RockMossMat(rockMoss, "MossGround", coverage: 1f, damageable: 0f),   // mô đất nền không bị click bóc (nếu không sẽ lộ mặt đá xám dưới đất)
             grass = ToonMat(toon, "Grass", new Color(0.5f, 0.78f, 0.3f), vertexStrength: 1f, wind: 0.22f, cullOff: true),
             mushroomCap = ToonMat(toon, "MushroomCap", new Color(0.88f, 0.28f, 0.17f), vertexStrength: 1f, rim: 0.3f),
             mushroomStem = ToonMat(toon, "MushroomStem", new Color(0.96f, 0.9f, 0.76f), vertexStrength: 1f),
@@ -88,7 +88,7 @@ public static class GardenSceneBuilder
     }
 
     // Đá phủ rêu: chỉ tạo giá trị mặc định lần đầu, sau đó giữ nguyên những gì bạn đã chỉnh
-    static Material RockMossMat(Shader shader, string name, float coverage)
+    static Material RockMossMat(Shader shader, string name, float coverage, float damageable)
     {
         string path = $"{MaterialDir}/{name}.mat";
         var material = AssetDatabase.LoadAssetAtPath<Material>(path);
@@ -99,6 +99,7 @@ public static class GardenSceneBuilder
             material.SetFloat("_MossCoverage", coverage);
         }
 
+        material.SetFloat("_MossDamageable", damageable);   // do vai trò của vật liệu quyết định, không phải thứ để chỉnh tay
         SetTextureIfEmpty(material, "_RockTex", GardenTextureGenerator.RockPath);
         SetTextureIfEmpty(material, "_MossTex", GardenTextureGenerator.MossPath);
         SetTextureIfEmpty(material, "_MossMask", GardenTextureGenerator.MaskPath);

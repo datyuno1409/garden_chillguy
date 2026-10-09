@@ -25,6 +25,7 @@ Shader "Garden/RockMoss"
         _MossFuzz ("Moss Fuzzy Edge", Range(0, 0.6)) = 0.25
         _MossThickness ("Moss Thickness (mét, rêu dày lên khỏi mặt đá)", Range(0, 0.15)) = 0.04
         _WetHalo ("Wet Halo (đá sẫm quanh mép rêu)", Range(0, 1)) = 0.35
+        _MossDamageable ("Damageable (1 = click bóc được rêu, 0 = không)", Range(0, 1)) = 1
 
         [Header(Lighting)]
         _ShadeColor ("Shade Tint", Color) = (0.62, 0.66, 0.82, 1)
@@ -78,6 +79,7 @@ Shader "Garden/RockMoss"
                 half _MossFuzz;
                 half _MossThickness;
                 half _WetHalo;
+                half _MossDamageable;
                 half _VertexColorStrength;
                 half _Bands;
                 half _Softness;
@@ -104,16 +106,40 @@ Shader "Garden/RockMoss"
                 half4 color : COLOR;
             };
 
+            // Danh sách vết rêu bị bóc, dùng chung cho mọi vật liệu rêu (đặt từ MossGrowth.SetHits).
+            // xyz = vị trí thế giới, w = bán kính. Kích thước mảng phải khớp MossDamage.Capacity.
+            #define MOSS_MAX_HITS 16
+            float4 _MossHits[MOSS_MAX_HITS];
+            float _MossHitStrengths[MOSS_MAX_HITS];
+            float _MossHitCount;
+
             // Dịch vị trí lấy mẫu mặt nạ theo hạt giống để mỗi vườn có các mảng rêu khác nhau
             float3 SeedShift() { return float3(_MossSeed * 3.7, _MossSeed * 1.3, _MossSeed * 2.9); }
 
+            // Mức rêu bị bóc tại một điểm (0..1): mạnh nhất ở giữa vết, giảm mềm dần ra mép
+            half MossDamageAt(float3 positionWS)
+            {
+                half damage = 0.0h;
+                int count = min((int)_MossHitCount, MOSS_MAX_HITS);
+                [loop] for (int i = 0; i < count; i++)
+                {
+                    float radius = max(_MossHits[i].w, 1e-4);
+                    float dist = distance(positionWS, _MossHits[i].xyz);
+                    half falloff = 1.0h - smoothstep(radius * 0.4, radius, dist);
+                    damage = max(damage, falloff * (half)_MossHitStrengths[i]);
+                }
+                return damage * _MossDamageable;
+            }
+
             // Điểm "dễ có rêu" (mặt hướng lên, mảng rêu trong mặt nạ, lông mịn ở mép) so với ngưỡng theo độ phủ.
             // Trả về lượng rêu 0..1 và, qua score/threshold, khoảng cách tới mép rêu.
-            half MossAmount(half4 mask, half3 normalWS, out half score, out half threshold)
+            // Chỗ bị bóc thì điểm bị trừ đi nhiều, nên rêu lùi ra và mép vẫn xù tự nhiên.
+            half MossAmount(half4 mask, half3 normalWS, float3 positionWS, out half score, out half threshold)
             {
                 half upFacing = saturate(normalWS.y);
                 score = lerp(mask.r, upFacing, _MossUpBias);
                 score += (mask.g - 0.5h) * _MossFuzz;
+                score -= MossDamageAt(positionWS) * 1.6h;
 
                 // Độ phủ càng cao thì ngưỡng càng thấp, rêu loang ra: 0 = không có rêu, 1 = phủ kín.
                 // Lấy luỹ thừa 0.6 để độ phủ nhỏ đã thấy vài đốm rêu (ngày đầu), còn độ phủ cao thì loang chậm lại.
@@ -133,7 +159,7 @@ Shader "Garden/RockMoss"
                     ? SAMPLE_TEXTURE2D_LOD(_MossMask, sampler_MossMask, (input.uv + _MossSeed * 0.137) * _MaskTiling, 0)
                     : SampleTriplanarLod(TEXTURE2D_ARGS(_MossMask, sampler_MossMask), positionWS + SeedShift(), normalWS, _MaskTiling);
                 half score, threshold;
-                half moss = MossAmount(mask, normalWS, score, threshold);
+                half moss = MossAmount(mask, normalWS, positionWS, score, threshold);
                 float3 displaced = positionWS + normalWS * (moss * _MossThickness);
 
                 output.positionWS = positionWS;
@@ -164,7 +190,7 @@ Shader "Garden/RockMoss"
                 }
 
                 half score, threshold;
-                half mossAmount = MossAmount(mask, normalWS, score, threshold);
+                half mossAmount = MossAmount(mask, normalWS, input.positionWS, score, threshold);
                 half upFacing = saturate(normalWS.y);
 
                 // Đá sẫm lại ở vùng sát mép rêu, như chỗ đá bị ẩm do rêu giữ nước

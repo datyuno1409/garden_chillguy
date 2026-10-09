@@ -53,6 +53,13 @@ Thêm dữ liệu vào phần riêng của mô-đun (field mới trong struct) *
 `PipHitTest` (thuần, có test) quyết định điểm chuột thuộc vùng nào: ngoài, vườn, thanh tiêu đề (kéo), nút, hoặc mép (đổi cỡ). `PipWindow` và `GardenClickRouter` đều dùng nó nên không có chuyện hai chỗ cùng nhận một click.
 `GardenClickRouter` chỉ nhận click **trái** trong vùng vườn, bắn tia từ camera (đá có `MeshCollider`) rồi `GardenHost.DispatchClick` báo cho mọi `IGardenClickHandler`. Chuột phải để trống.
 
+### Ví dụ: click phá rêu (mô-đun Moss)
+Click vào đá -> `MossModule.OnGardenClick` thêm một vết bóc (`MossDamage`, tối đa 16 vết, click lặp thì vết rộng ra tới 2 lần, rêu lành dần sau `healDays`). Vết được lưu trong phần `moss` của file lưu, đẩy sang shader qua mảng toàn cục (`MossGrowth.SetHits`), và mô-đun phát `GardenDisturbance` để mô-đun khác (con vật) nghe và phản ứng mà không cần biết rêu.
+Vật liệu có `_MossDamageable = 0` (mô đất nền) không bị bóc.
+
+## Chặn chạy hai bản
+`SingleInstance` dùng một Mutex theo tên app: bản chạy sau tự thoát, và với cửa sổ vườn thì nhờ bản đang chạy hiện lên (lệnh `show`). Cần thiết vì các lệnh hiện/ẩn/tắt đi qua một cổng UDP chung (47321), hai bản cùng chạy sẽ làm lệnh đến nhầm bản.
+
 ## Công cụ dev
 - Menu `Tools/Garden/Dev/...`: xem thử ở ngày N, xoá file lưu của Editor.
 - Dòng lệnh bản build: `-gardenAgeDays N` (xem thử, không ghi file), `-gardenStateFile <đường dẫn>` (dùng file lưu khác để thử nâng cấp mà không đụng vườn thật).

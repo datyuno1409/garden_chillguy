@@ -41,6 +41,7 @@ Material:
     - _Bands: 3
     - _MaskTiling: 0.3
     - _MossCoverage: 1
+    - _MossDamageable: 0
     - _MossEdgeSoftness: 0.08
     - _MossFuzz: 0.25
     - _MossSeed: 0
