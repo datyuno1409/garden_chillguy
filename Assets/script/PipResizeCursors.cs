@@ -1,9 +1,5 @@
-using System;
+using Garden.Shell;
 using UnityEngine;
-
-// Mép hoặc góc nào của cửa sổ PIP đang được chỉ vào
-[Flags]
-public enum PipEdge { None = 0, Left = 1, Right = 2, Top = 4, Bottom = 8 }
 
 // Con trỏ mũi tên hai đầu cho việc đổi kích thước. Tự vẽ lúc chạy nên không cần asset.
 public static class PipResizeCursors

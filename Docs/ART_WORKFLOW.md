@@ -7,15 +7,16 @@ Menu **Tools/Garden/3. Build garden scene**. Chạy lại bao nhiêu lần cũng
 Nó **không ghi đè** texture trong `Assets/Garden/Textures` và không đổi vật liệu `RockMoss`, `MossGround` nếu đã tồn tại.
 
 ## Rêu mọc theo thời gian thật
-`GardenGrowthSystem` (trên object `Garden`) cộng thời gian thật đã trôi qua, kể cả lúc tắt app, vào "tuổi rêu" rồi đổi ra độ phủ:
+Mô-đun rêu (`MossModule` trên `Garden/Rocks`, điều phối bởi `GardenHost` trên `Garden`; xem [ARCHITECTURE.md](ARCHITECTURE.md)) cộng thời gian thật đã trôi qua, kể cả lúc tắt app, vào "tuổi rêu" rồi đổi ra độ phủ:
 ngày đầu vài đốm trên đỉnh đá, mọc chậm lúc đầu, nhanh ở giữa, chậm lại gần cuối; mặc định 14 ngày thì dừng ở độ phủ 0.5 (đỉnh và một phần thân phủ rêu, chân đá vẫn lộ).
-Chỉnh trong component: `Settings` (days To Full Cover, start/max Coverage).
+Chỉnh trong component `Moss Module` (object `Garden/Rocks`): `Settings` (days To Full Cover, start/max Coverage).
 
 - Trạng thái lưu ở `%LOCALAPPDATA%\GardenChill\garden_state.json` (bản build) và `garden_state.editor.json` (Editor). Hạt giống trong file quyết định kiểu loang của rêu, mỗi vườn một kiểu.
 - Xem thử không phải đợi: menu **Tools/Garden/Dev/Preview moss at day N**, hoặc chạy bản build với `Aquarium.exe -gardenAgeDays 7` (xem thử, không ghi file).
 - Muốn bắt đầu lại từ ngày 0: xóa file trên (hoặc menu **Tools/Garden/Dev/Reset editor garden state** cho Editor).
 - Đồng hồ máy chỉnh lùi thì rêu không teo đi; tối đa tính 365 ngày cho một lần tắt app.
-- Test của lõi logic: Window > General > Test Runner > EditMode (assembly `Garden.Growth.Tests`).
+- Dòng lệnh `-gardenStateFile <đường dẫn>` để thử với file lưu khác mà không đụng vườn thật.
+- Test: Window > General > Test Runner > EditMode (assembly `Garden.Tests`).
 
 ## Lưu ý kỹ thuật: DX11
 Bản build Windows dùng **Direct3D 11** (ProjectSettings > Player > Other Settings > Graphics APIs). Với DX12 cửa sổ vườn bị treo khi tắt (tiến trình không thoát, đã kiểm chứng); DX11 thoát sạch. Đừng đổi lại sang DX12 mà không thử lại việc tắt app.

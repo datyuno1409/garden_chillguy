@@ -1,6 +1,6 @@
 {
-  "name": "Garden.Growth",
-  "rootNamespace": "Garden.Growth",
+  "name": "Garden.Core",
+  "rootNamespace": "Garden.Core",
   "references": [],
   "includePlatforms": [],
   "excludePlatforms": [],

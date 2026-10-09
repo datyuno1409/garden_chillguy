@@ -3,6 +3,7 @@ using System.Collections;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using Garden.Shell;
 using UnityEngine;
 
 // Biến cửa sổ game thành khung PIP: không thanh tiêu đề, luôn nổi, không tự tắt được.
@@ -31,6 +32,27 @@ public class PipWindow : MonoBehaviour
     public float TitleBarHeight { get; set; }
     public float TitleBarButtonsWidth { get; set; }
 
+    const float EdgeSize = 6f;   // bề dày vùng mép để bắt chuột đổi kích thước (pixel)
+
+    // Vùng của cửa sổ mà con trỏ đang ở (cập nhật mỗi khung hình khi cửa sổ hiện)
+    public PipHit CurrentHit { get; private set; } = new PipHit(PipRegion.Outside);
+
+    // Click lúc này là click vào vườn (không phải kéo cửa sổ, đổi cỡ hay bấm nút)
+    public bool IsGardenClick => CurrentHit.region == PipRegion.Garden;
+
+    void RefreshHit()
+    {
+        if (!IsCursorOver)
+        {
+            CurrentHit = new PipHit(PipRegion.Outside);
+            return;
+        }
+
+        Vector3 mouse = Input.mousePosition;   // gốc ở góc dưới-trái của cửa sổ
+        var layout = new PipLayout(EdgeSize, TitleBarHeight, TitleBarButtonsWidth);
+        CurrentHit = PipHitTest.Classify(mouse.x, mouse.y, Screen.width, Screen.height, layout);
+    }
+
 #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
     const int GWL_STYLE = -16;
     const int GWL_EXSTYLE = -20;
@@ -43,7 +65,6 @@ public class PipWindow : MonoBehaviour
     const long WS_MAXIMIZEBOX = 0x00010000L;   // nút phóng to
     const long REMOVED_STYLES = WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
 
-    const int EdgeSize = 6;                    // bề dày vùng mép để bắt chuột đổi kích thước (pixel)
     const int VK_LBUTTON = 0x01;
     const int SM_XVIRTUALSCREEN = 76;          // vùng bao của tất cả các màn hình
     const int SM_YVIRTUALSCREEN = 77;
@@ -146,6 +167,7 @@ public class PipWindow : MonoBehaviour
     // Chuột trái: kéo thanh tiêu đề để di chuyển cửa sổ, kéo mép/góc để đổi kích thước.
     // Cửa sổ bám theo con trỏ cho tới khi thả chuột. Dùng toạ độ con trỏ trên màn hình
     // (không dùng Input.mousePosition vì nó đổi theo khi cửa sổ di chuyển).
+    // Vùng nào của cửa sổ là của ai do PipHitTest quyết định (một nguồn sự thật duy nhất).
     void Update()
     {
         if (window == IntPtr.Zero || !IsVisible) return;
@@ -156,46 +178,20 @@ public class PipWindow : MonoBehaviour
             case Gesture.Resizing: ContinueResize(); return;
         }
 
+        RefreshHit();
         UpdateHoveredEdges();
         if (!Input.GetMouseButtonDown(0)) return;
 
-        if (hoveredEdges != PipEdge.None) BeginGesture(Gesture.Resizing, hoveredEdges);
-        else if (IsOverTitleBarDragArea()) BeginGesture(Gesture.Moving, PipEdge.None);
-    }
-
-    // Con trỏ đang ở thanh tiêu đề, bên trái vùng nút bấm
-    bool IsOverTitleBarDragArea()
-    {
-        if (!IsCursorOver) return false;
-        Vector3 mouse = Input.mousePosition;
-        bool inBar = mouse.y >= Screen.height - TitleBarHeight;
-        bool inButtons = mouse.x >= Screen.width - TitleBarButtonsWidth;
-        return inBar && !inButtons;
+        if (CurrentHit.region == PipRegion.ResizeEdge) BeginGesture(Gesture.Resizing, CurrentHit.edges);
+        else if (CurrentHit.region == PipRegion.TitleBarDrag) BeginGesture(Gesture.Moving, PipEdge.None);
     }
 
     void UpdateHoveredEdges()
     {
-        PipEdge edges = HitTestEdges();
+        PipEdge edges = CurrentHit.region == PipRegion.ResizeEdge ? CurrentHit.edges : PipEdge.None;
         if (edges == hoveredEdges) return;
         hoveredEdges = edges;
         PipResizeCursors.Apply(edges);
-    }
-
-    // Mép/góc nào đang nằm dưới con trỏ (None nếu con trỏ ở giữa hoặc ngoài cửa sổ)
-    PipEdge HitTestEdges()
-    {
-        if (!IsCursorOver) return PipEdge.None;
-
-        Vector3 mouse = Input.mousePosition;   // gốc ở góc dưới-trái của cửa sổ
-        bool inButtonArea = mouse.x >= Screen.width - TitleBarButtonsWidth && mouse.y >= Screen.height - TitleBarHeight;
-        if (inButtonArea) return PipEdge.None;
-
-        PipEdge edges = PipEdge.None;
-        if (mouse.x < EdgeSize) edges |= PipEdge.Left;
-        else if (mouse.x >= Screen.width - EdgeSize) edges |= PipEdge.Right;
-        if (mouse.y < EdgeSize) edges |= PipEdge.Bottom;
-        else if (mouse.y >= Screen.height - EdgeSize) edges |= PipEdge.Top;
-        return edges;
     }
 
     void BeginGesture(Gesture kind, PipEdge edges)
@@ -415,6 +411,9 @@ public class PipWindow : MonoBehaviour
     public void Quit() { Debug.Log("PipWindow.Quit (chỉ có tác dụng trong bản build Windows)"); }
     public void OpenControlPanel() { Debug.Log("PipWindow.OpenControlPanel (chỉ có tác dụng trong bản build Windows)"); }
     public void EnsureControlPanelRunning() { }
+
+    // Trong Editor: vẫn tính vùng chuột ở Game view để thử click vào vườn
+    void Update() { RefreshHit(); }
 
     // Trong Editor: cho phép xem thử thanh nút ở Game view bằng cách rê chuột vào
     public bool IsCursorOver

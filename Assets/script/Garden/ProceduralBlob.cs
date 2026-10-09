@@ -39,6 +39,8 @@ public class ProceduralBlob : MonoBehaviour
     // Mesh thay thế: gán mô hình đã sửa trong Maya vào đây thì dùng nó thay cho mesh sinh bằng code
     [SerializeField] Mesh overrideMesh;
 
+    [SerializeField] bool meshCollider;
+
     Mesh mesh;
 
     public BlobSettings Settings => settings;
@@ -58,6 +60,13 @@ public class ProceduralBlob : MonoBehaviour
     void OnValidate() { if (isActiveAndEnabled) Rebuild(); }
     void OnDisable() { DestroyMesh(); }
 
+    // Bật vùng va chạm theo đúng hình khối để click chuột (tia từ camera) trúng được tảng đá
+    public void SetCollider(bool enabled)
+    {
+        meshCollider = enabled;
+        Rebuild();
+    }
+
     void Rebuild()
     {
         var filter = GetComponent<MeshFilter>();
@@ -66,15 +75,39 @@ public class ProceduralBlob : MonoBehaviour
         {
             DestroyMesh();
             filter.sharedMesh = overrideMesh;
+        }
+        else
+        {
+            if (mesh == null) mesh = new Mesh { name = "ProceduralBlob", hideFlags = HideFlags.HideAndDontSave };
+            filter.sharedMesh = mesh;
+
+            var data = new MeshData();
+            BlobMeshBuilder.AppendBlob(data, settings.shape, Matrix4x4.identity, ColorAt);
+            data.ApplyTo(mesh);
+        }
+
+        UpdateCollider(filter.sharedMesh);
+    }
+
+    void UpdateCollider(Mesh shape)
+    {
+        bool hasCollider = TryGetComponent(out MeshCollider collider);
+
+        if (!meshCollider)
+        {
+            if (hasCollider) DestroyUnityObject(collider);
             return;
         }
 
-        if (mesh == null) mesh = new Mesh { name = "ProceduralBlob", hideFlags = HideFlags.HideAndDontSave };
-        filter.sharedMesh = mesh;
+        if (!hasCollider) collider = gameObject.AddComponent<MeshCollider>();
+        collider.sharedMesh = null;   // gán lại để Unity dựng lại vùng va chạm theo mesh mới
+        collider.sharedMesh = shape;
+    }
 
-        var data = new MeshData();
-        BlobMeshBuilder.AppendBlob(data, settings.shape, Matrix4x4.identity, ColorAt);
-        data.ApplyTo(mesh);
+    static void DestroyUnityObject(UnityEngine.Object target)
+    {
+        if (Application.isPlaying) Destroy(target);
+        else DestroyImmediate(target);
     }
 
     Color32 ColorAt(Vector3 direction, float noiseValue)
@@ -88,8 +121,8 @@ public class ProceduralBlob : MonoBehaviour
     void DestroyMesh()
     {
         if (mesh == null) return;
-        if (Application.isPlaying) Destroy(mesh);
-        else DestroyImmediate(mesh);
+        if (TryGetComponent(out MeshCollider collider)) collider.sharedMesh = null;   // đừng để vùng va chạm trỏ vào mesh đã huỷ
+        DestroyUnityObject(mesh);
         mesh = null;
     }
 }

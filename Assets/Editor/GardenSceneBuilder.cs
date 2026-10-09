@@ -1,4 +1,6 @@
 using System.IO;
+using Garden.Core;
+using Garden.Moss;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -40,8 +42,11 @@ public static class GardenSceneBuilder
 
         Materials materials = CreateMaterials();
         BuildGround(root.transform, materials);
-        MossGrowth moss = BuildRocks(root.transform, materials);
-        root.AddComponent<GardenGrowthSystem>().Configure(moss);
+        BuildRocks(root.transform, materials);
+
+        // Host điều phối các mô-đun nằm dưới nó (ví dụ rêu); router biến click chuột thành click vào vườn
+        root.AddComponent<GardenHost>();
+        root.AddComponent<GardenClickRouter>();
         BuildDetails(root.transform, materials);
         BuildFramingLeaves(root.transform, materials);
         SetupLighting();
@@ -159,12 +164,15 @@ public static class GardenSceneBuilder
 
     // ---------- Đá ----------
 
-    static MossGrowth BuildRocks(Transform parent, Materials m)
+    static void BuildRocks(Transform parent, Materials m)
     {
         var rocks = new GameObject("Rocks").transform;
         rocks.SetParent(parent, false);
+
+        // Mô-đun rêu: MossGrowth vẽ rêu lên các tảng đá con, MossModule cho rêu mọc theo thời gian thật
         var moss = rocks.gameObject.AddComponent<MossGrowth>();
-        moss.Coverage = 0.6f;   // chỉ để xem ở Editor; khi chạy GardenGrowthSystem đặt theo số ngày
+        moss.Coverage = 0.6f;   // chỉ để xem ở Editor; khi chạy MossModule đặt theo số ngày
+        rocks.gameObject.AddComponent<MossModule>().Configure(moss);
 
         // x, z, bán kính x/y/z, seed. Tảng đầu tiên là tảng chính ở giữa.
         float[][] layout =
@@ -185,9 +193,8 @@ public static class GardenSceneBuilder
 
             GameObject rock = NewBlob("Rock_" + (int)r[5], rocks, new Vector3(r[0], y, r[1]), scale, m.rockMoss, settings);
             rock.transform.rotation = Quaternion.Euler(0f, r[5] * 23f, 0f);
+            rock.GetComponent<ProceduralBlob>().SetCollider(true);   // để click chuột trúng được đá
         }
-
-        return moss;
     }
 
     // Khối mịn tròn trịa kiểu tranh vẽ, màu đỉnh gần trung tính để texture quyết định màu

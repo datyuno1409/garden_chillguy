@@ -1,8 +1,10 @@
 {
-  "name": "Garden.Growth.Tests",
-  "rootNamespace": "Garden.Growth.Tests",
+  "name": "Garden.Tests",
+  "rootNamespace": "Garden.Tests",
   "references": [
-    "Garden.Growth",
+    "Garden.Core",
+    "Garden.Moss",
+    "Garden.Shell",
     "UnityEngine.TestRunner",
     "UnityEditor.TestRunner"
   ],

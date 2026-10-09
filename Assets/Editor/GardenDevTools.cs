@@ -1,5 +1,5 @@
 using System.IO;
-using Garden.Growth;
+using Garden.Core;
 using UnityEditor;
 using UnityEngine;
 
@@ -24,14 +24,14 @@ public static class GardenDevTools
 
     public static void Preview(double days)
     {
-        var system = Object.FindAnyObjectByType<GardenGrowthSystem>();
-        if (system == null)
+        var host = Object.FindAnyObjectByType<GardenHost>();
+        if (host == null)
         {
-            Debug.LogWarning("GardenDevTools: không thấy GardenGrowthSystem, hãy chạy Tools/Garden/3. Build garden scene.");
+            Debug.LogWarning("GardenDevTools: không thấy GardenHost, hãy chạy Tools/Garden/3. Build garden scene.");
             return;
         }
 
-        system.PreviewAge(days);
+        host.PreviewAge(days);
         SceneView.RepaintAll();
     }
 }
