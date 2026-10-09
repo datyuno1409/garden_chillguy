@@ -5,10 +5,12 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using Garden.Core;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
-// App riêng (scene ControlPanel): bật, tắt, ẩn, hiện cửa sổ bể cá. Cửa sổ bể cá tự nó không thao tác được.
+// App riêng (scene ControlPanel): tab "Điều khiển" bật, tắt, ẩn, hiện cửa sổ bể cá; tab "Thiết kế" là bảng thiết kế vườn
+// (xem DesignerBoard). Cửa sổ bể cá chỉ để ngắm và click.
 public class ControlPanel : MonoBehaviour
 {
     const int StatusUnknown = 0;
@@ -23,16 +25,25 @@ public class ControlPanel : MonoBehaviour
     [SerializeField] string aquariumExePath = "../Aquarium/Aquarium.exe";
     [SerializeField] int pollIntervalMs = 1000;
 
+    const int TabControl = 0;
+    static readonly string[] TabLabels = { "Điều khiển", "Thiết kế" };
+
     volatile int status = StatusUnknown;   // được luồng hỏi trạng thái cập nhật
     volatile bool polling;
     Thread poller;
     string message = "";
+
+    DesignerBoard board;
+    int tab = TabControl;
 
     void Awake()
     {
         Application.runInBackground = true;
         QualitySettings.vSyncCount = 0;
         Application.targetFrameRate = 30;
+
+        board = new DesignerBoard(GardenArgs.SettingsFilePath(), DesignerBoard.DefaultPanels());
+        if (GardenArgs.TryGet(GardenArgs.Tab, out string tabText) && int.TryParse(tabText, out int chosen)) tab = Mathf.Clamp(chosen, 0, TabLabels.Length - 1);
     }
 
     void OnEnable()
@@ -42,7 +53,13 @@ public class ControlPanel : MonoBehaviour
         poller.Start();
     }
 
-    void OnDisable() { polling = false; }
+    void OnDisable()
+    {
+        polling = false;
+        board?.Flush();   // không để mất lần chỉnh cuối khi đóng
+    }
+
+    void Update() { board.Update(); }
 
     // Hỏi bể cá mỗi giây xem còn chạy không và đang ẩn hay hiện
     void PollStatus()
@@ -115,13 +132,23 @@ public class ControlPanel : MonoBehaviour
     {
         GUI.skin.label.fontSize = 16;
         GUI.skin.button.fontSize = 16;
+        GUI.skin.toggle.fontSize = 16;
         GUI.skin.label.wordWrap = true;
 
         GUILayout.BeginArea(new Rect(16, 16, Screen.width - 32, Screen.height - 32));
         GUILayout.Label("Bảng điều khiển bể cá");
         GUILayout.Label("Trạng thái: " + StatusText(status));
+        tab = GUILayout.Toolbar(tab, TabLabels, GUILayout.Height(32));
         GUILayout.Space(8);
 
+        if (tab == TabControl) DrawControlTab();
+        else board.Draw();
+
+        GUILayout.EndArea();
+    }
+
+    void DrawControlTab()
+    {
         int current = status;
         bool running = current == StatusVisible || current == StatusHidden;
         DrawButton("Bật bể cá", current == StatusOff, LaunchAquarium);
@@ -130,7 +157,6 @@ public class ControlPanel : MonoBehaviour
         DrawButton("Tắt bể cá", running, () => SendCommand(PipProtocol.Quit));
 
         if (message.Length > 0) GUILayout.Label(message);
-        GUILayout.EndArea();
     }
 
     static void DrawButton(string label, bool enabled, Action onClick)

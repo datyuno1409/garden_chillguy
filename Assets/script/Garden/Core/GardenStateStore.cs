@@ -16,7 +16,7 @@ namespace Garden.Core
         }
     }
 
-    // Đọc/ghi trạng thái vườn ra file JSON. Ghi qua file tạm rồi thay thế nên mất điện giữa chừng không làm hỏng file cũ.
+    // Đọc/ghi trạng thái vườn ra file JSON.
     // Khi gặp file bản cũ / hỏng / bản mới hơn: luôn giữ lại một bản sao lưu trước khi tạo vườn mới hay ghi đè.
     public static class GardenStateStore
     {
@@ -47,59 +47,36 @@ namespace Garden.Core
                     return new LoadResult(state, outcome);
 
                 case LoadOutcome.Migrated:
-                    Backup(path, MigratedBackupSuffix, overwrite: false);
+                    SafeFile.Backup(path, MigratedBackupSuffix, overwrite: false);
                     return new LoadResult(state, outcome);
 
                 case LoadOutcome.NewerThanSupported:
                     Debug.LogWarning("GardenStateStore: file vườn do bản app mới hơn tạo ra, bản này không hiểu. Giữ bản sao và tạo vườn mới: " + path);
-                    Backup(path, NewerBackupSuffix, overwrite: true);
+                    SafeFile.Backup(path, NewerBackupSuffix, overwrite: true);
                     return new LoadResult(fresh.state, outcome);
 
                 default:
                     Debug.LogWarning("GardenStateStore: dữ liệu vườn không hợp lệ, giữ bản sao và tạo vườn mới: " + path);
-                    Backup(path, CorruptBackupSuffix, overwrite: true);
+                    SafeFile.Backup(path, CorruptBackupSuffix, overwrite: true);
                     return new LoadResult(fresh.state, LoadOutcome.Corrupt);
             }
         }
 
-        public static void Save(string path, GardenState state)
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-
-            string temp = path + ".tmp";
-            File.WriteAllText(temp, JsonUtility.ToJson(state, true));
-            if (File.Exists(path)) File.Replace(temp, path, null);
-            else File.Move(temp, path);
-        }
-
-        static void Backup(string path, string suffix, bool overwrite)
-        {
-            string backup = path + suffix;
-            if (!overwrite && File.Exists(backup)) return;
-
-            try
-            {
-                File.Copy(path, backup, overwrite);
-            }
-            catch (IOException e)
-            {
-                Debug.LogWarning("GardenStateStore: không sao lưu được file vườn: " + e.Message);
-            }
-        }
+        public static void Save(string path, GardenState state) => SafeFile.WriteAtomically(path, JsonUtility.ToJson(state, true));
     }
 
-    // Vị trí file trạng thái: dùng thư mục chung (không theo tên sản phẩm) để Control Panel và cửa sổ vườn cùng thấy.
+    // Vị trí các file dữ liệu: dùng thư mục chung (không theo tên sản phẩm) để Control Panel và cửa sổ vườn cùng thấy.
     // Trong Unity Editor dùng file riêng để thử nghiệm không làm hỏng vườn thật.
     public static class GardenPaths
     {
-        public static string StateFile
+        public static string StateFile => InDataFolder("garden_state");
+        public static string SettingsFile => InDataFolder("garden_settings");
+
+        static string InDataFolder(string baseName)
         {
-            get
-            {
-                string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                string name = Application.isEditor ? "garden_state.editor.json" : "garden_state.json";
-                return Path.Combine(root, "GardenChill", name);
-            }
+            string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string suffix = Application.isEditor ? ".editor.json" : ".json";
+            return Path.Combine(root, "GardenChill", baseName + suffix);
         }
     }
 }

@@ -43,8 +43,8 @@ namespace Garden.Core
         // Ghi phần dữ liệu của mình vào trạng thái, trả về trạng thái mới
         GardenState Save(GardenState state);
 
-        // Thời gian trôi qua (ngày): cả lúc đang chạy lẫn thời gian đã tắt app
-        void Tick(double elapsedDays);
+        // Thời gian thật đã trôi qua, cả lúc đang chạy lẫn lúc đã tắt app
+        void Tick(TimeWindow window);
     }
 
     // Mô-đun có thể xem thử ở một độ tuổi bất kỳ (không ghi vào file lưu), để kiểm tra bằng mắt không phải đợi nhiều ngày
@@ -57,5 +57,21 @@ namespace Garden.Core
     public interface IGardenClickHandler
     {
         void OnGardenClick(GardenClick click);
+    }
+
+    // Bảng điều khiển của một mô-đun trong bảng thiết kế của Control Panel.
+    // Mỗi mô-đun mang theo bảng của riêng mình, nên thêm mô-đun mới thì bảng thiết kế tự có thêm một mục.
+    // Draw vẽ các ô chọn bằng IMGUI và trả về cài đặt mới (không sửa bản đưa vào).
+    public interface IGardenDesignerPanel
+    {
+        string Title { get; }
+        GardenSettings Draw(GardenSettings settings, System.DateTime nowUtc);
+    }
+
+    // Thành phần nhận cài đặt do người chơi chọn ở bảng thiết kế (Control Panel ghi file, cửa sổ vườn đọc và áp dụng ngay).
+    // Mỗi thành phần chỉ đọc phần cài đặt của mình trong GardenSettings.
+    public interface IGardenConfigurable
+    {
+        void ApplySettings(GardenSettings settings);
     }
 }

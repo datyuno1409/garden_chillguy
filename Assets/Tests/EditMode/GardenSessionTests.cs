@@ -31,10 +31,13 @@ namespace Garden.Tests
 
         public GardenState Save(GardenState state) => state.WithSection(id, new Data { total = total });
 
-        public void Tick(double elapsedDays)
+        public readonly System.Collections.Generic.List<TimeWindow> windows = new System.Collections.Generic.List<TimeWindow>();
+
+        public void Tick(TimeWindow window)
         {
-            total += elapsedDays;
+            total += window.Days;
             tickCount++;
+            windows.Add(window);
         }
 
         public void PreviewAge(double ageDays) { lastPreview = ageDays; total = ageDays; }
@@ -45,7 +48,7 @@ namespace Garden.Tests
         public string Id => "broken";
         public void Load(GardenState state, GardenContext context) => throw new InvalidOperationException("load boom");
         public GardenState Save(GardenState state) => throw new InvalidOperationException("save boom");
-        public void Tick(double elapsedDays) => throw new InvalidOperationException("tick boom");
+        public void Tick(TimeWindow window) => throw new InvalidOperationException("tick boom");
     }
 
     // Mô-đun giả đọc phần "moss" theo đúng định dạng của rêu, để thử việc nâng cấp file bản 1
@@ -56,7 +59,7 @@ namespace Garden.Tests
         public string Id => "moss";
         public void Load(GardenState state, GardenContext context) => age = state.TryGetSection(Id, out Data d) ? d.ageDays : -1;
         public GardenState Save(GardenState state) => state.WithSection(Id, new Data { ageDays = age });
-        public void Tick(double elapsedDays) { age += elapsedDays; }
+        public void Tick(TimeWindow window) { age += window.Days; }
     }
 
     public class GardenSessionTests

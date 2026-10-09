@@ -1,10 +1,9 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace Garden.Core
 {
-    // Phần dữ liệu của một mô-đun trong file lưu: tên mô-đun và dữ liệu của nó dưới dạng JSON.
+    // Phần dữ liệu của một mô-đun trong file lưu / file cài đặt: tên mô-đun và dữ liệu của nó dưới dạng JSON.
     // Mỗi mô-đun tự quyết định định dạng bên trong; Core chỉ giữ nguyên và không đoán.
     [Serializable]
     public struct GardenSection
@@ -22,7 +21,7 @@ namespace Garden.Core
         public const int CurrentVersion = 2;
 
         public int version;
-        public int seed;                 // hạt giống của vườn: mỗi vườn một kiểu (ví dụ rêu loang chỗ nào)
+        public int seed;                 // hạt giống của vườn: mỗi vườn một kiểu (ví dụ rêu loang chỗ nào, lịch mưa)
         public long createdTicksUtc;
         public long lastSeenTicksUtc;    // lần cuối ứng dụng còn chạy, để tính thời gian đã trôi qua khi mở lại
         public GardenSection[] sections;
@@ -45,39 +44,12 @@ namespace Garden.Core
             return copy;
         }
 
-        public bool TryGetSection<T>(string id, out T value)
-        {
-            value = default;
-            if (sections == null) return false;
-
-            foreach (GardenSection section in sections)
-            {
-                if (section.id != id) continue;
-                try
-                {
-                    value = JsonUtility.FromJson<T>(section.json);
-                    return true;
-                }
-                catch (ArgumentException e)
-                {
-                    Debug.LogWarning($"GardenState: phần '{id}' trong file lưu không đọc được, dùng giá trị mặc định ({e.Message})");
-                    return false;
-                }
-            }
-            return false;
-        }
+        public bool TryGetSection<T>(string id, out T value) => GardenSections.TryGet(sections, id, out value);
 
         public GardenState WithSection<T>(string id, T value)
         {
-            var list = new List<GardenSection>(sections ?? Array.Empty<GardenSection>());
-            var entry = new GardenSection { id = id, json = JsonUtility.ToJson(value) };
-
-            int index = list.FindIndex(s => s.id == id);
-            if (index >= 0) list[index] = entry;
-            else list.Add(entry);
-
             GardenState copy = this;
-            copy.sections = list.ToArray();
+            copy.sections = GardenSections.With(sections, id, value);
             return copy;
         }
 
@@ -85,22 +57,9 @@ namespace Garden.Core
         public bool IsValid()
         {
             bool ticksOk = IsValidTicks(lastSeenTicksUtc) && IsValidTicks(createdTicksUtc);
-            return version == CurrentVersion && ticksOk && SectionsAreValid();
+            return version == CurrentVersion && ticksOk && GardenSections.AreValid(sections);
         }
 
         public static bool IsValidTicks(long ticks) => ticks >= DateTime.MinValue.Ticks && ticks <= DateTime.MaxValue.Ticks;
-
-        bool SectionsAreValid()
-        {
-            if (sections == null) return true;
-
-            var seen = new HashSet<string>();
-            foreach (GardenSection section in sections)
-            {
-                bool ok = !string.IsNullOrEmpty(section.id) && section.json != null && seen.Add(section.id);
-                if (!ok) return false;
-            }
-            return true;
-        }
     }
 }

@@ -4,6 +4,8 @@
   "references": [
     "Garden.Core",
     "Garden.Moss",
+    "Garden.Rain",
+    "Garden.Layout",
     "Garden.Shell",
     "UnityEngine.TestRunner",
     "UnityEditor.TestRunner"

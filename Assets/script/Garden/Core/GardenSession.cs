@@ -48,8 +48,8 @@ namespace Garden.Core
             var context = new GardenContext(state.seed, Events);
             foreach (IGardenModule module in modules) Guarded(module, "Load", () => module.Load(state, context));
 
-            double offline = GardenClock.ElapsedDays(state.LastSeenUtc, now, maxOfflineDays);
-            if (offline > 0) TickAll(offline);
+            // Thời gian đã trôi qua lúc tắt app: từ lần cuối còn chạy tới giờ
+            if (GardenClock.TryWindow(state.LastSeenUtc, now, maxOfflineDays, out TimeWindow offline)) TickAll(offline);
 
             lastTickUtc = now;
             Save();
@@ -59,8 +59,7 @@ namespace Garden.Core
         public void Refresh()
         {
             DateTime now = clock();
-            double elapsed = GardenClock.ElapsedDays(lastTickUtc, now, maxOfflineDays);
-            if (elapsed > 0) TickAll(elapsed);
+            if (GardenClock.TryWindow(lastTickUtc, now, maxOfflineDays, out TimeWindow window)) TickAll(window);
             lastTickUtc = now;
         }
 
@@ -102,9 +101,9 @@ namespace Garden.Core
             }
         }
 
-        void TickAll(double elapsedDays)
+        void TickAll(TimeWindow window)
         {
-            foreach (IGardenModule module in modules) Guarded(module, "Tick", () => module.Tick(elapsedDays));
+            foreach (IGardenModule module in modules) Guarded(module, "Tick", () => module.Tick(window));
         }
 
         // Một mô-đun lỗi không được kéo sập cả vườn: ghi lỗi kèm tên mô-đun rồi chạy tiếp các mô-đun khác

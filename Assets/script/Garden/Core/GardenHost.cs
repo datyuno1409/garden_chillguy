@@ -5,22 +5,23 @@ using UnityEngine;
 
 namespace Garden.Core
 {
-    // Gắn vào gốc của khu vườn. Tìm mọi mô-đun nằm dưới nó, chạy GardenSession, cập nhật và lưu định kỳ.
-    // Dòng lệnh dành cho dev:
-    //   -gardenAgeDays N          xem thử mọi mô-đun ở tuổi N ngày, không ghi vào file lưu
-    //   -gardenStateFile <path>   dùng file lưu khác (để thử nâng cấp file mà không đụng vào vườn thật)
+    // Gắn vào gốc của khu vườn. Tìm mọi mô-đun nằm dưới nó, chạy GardenSession, cập nhật và lưu định kỳ,
+    // và theo dõi file cài đặt (do Control Panel ghi) để áp dụng ngay cho các thành phần cần nó.
+    // Tham số dòng lệnh dành cho dev: xem GardenArgs.
     public sealed class GardenHost : MonoBehaviour
     {
-        const string AgeArgument = "-gardenAgeDays";
-        const string StateFileArgument = "-gardenStateFile";
-
-        [SerializeField] float refreshSeconds = 30f;   // bao lâu cho các mô-đun chạy thời gian trôi qua một lần
-        [SerializeField] float saveSeconds = 300f;     // bao lâu lưu một lần, phòng khi app bị tắt đột ngột
+        [SerializeField] float refreshSeconds = 30f;        // bao lâu cho các mô-đun chạy thời gian trôi qua một lần
+        [SerializeField] float saveSeconds = 300f;          // bao lâu lưu một lần, phòng khi app bị tắt đột ngột
+        [SerializeField] float settingsPollSeconds = 1f;    // bao lâu kiểm tra file cài đặt có đổi không
 
         GardenSession session;
         IGardenClickHandler[] clickHandlers = Array.Empty<IGardenClickHandler>();
+        IGardenConfigurable[] configurables = Array.Empty<IGardenConfigurable>();
+        string settingsPath;
+        DateTime lastSettingsWriteUtc = DateTime.MinValue;
         float untilRefresh;
         float untilSave;
+        float untilSettingsPoll;
 
         public GardenSession Session => session;
 
@@ -28,22 +29,35 @@ namespace Garden.Core
         {
             IGardenModule[] modules = GetComponentsInChildren<IGardenModule>(true);
             clickHandlers = GetComponentsInChildren<IGardenClickHandler>(true);
+            configurables = GetComponentsInChildren<IGardenConfigurable>(true);
+            settingsPath = GardenArgs.SettingsFilePath();
 
             bool hasPreviewAge = TryReadAgeArgument(out double previewAge);
-            string stateFile = TryReadArgument(StateFileArgument, out string customPath) ? customPath : GardenPaths.StateFile;
-            session = new GardenSession(stateFile, modules, () => DateTime.UtcNow);
+            session = new GardenSession(GardenArgs.StateFilePath(), modules, () => DateTime.UtcNow);
             session.Start(UnityEngine.Random.Range(1, 100000), preview: hasPreviewAge);
             if (hasPreviewAge) session.PreviewAge(previewAge);
 
+            ReloadSettings();   // áp cài đặt người chơi đã chọn (sau khi các mô-đun nạp xong dữ liệu)
+
             untilRefresh = refreshSeconds;
             untilSave = saveSeconds;
+            untilSettingsPoll = settingsPollSeconds;
         }
 
         void Update()
         {
-            if (session == null || session.IsPreview) return;
+            if (session == null) return;
 
             float dt = Time.unscaledDeltaTime;
+            untilSettingsPoll -= dt;
+            if (untilSettingsPoll <= 0f)
+            {
+                PollSettings();
+                untilSettingsPoll = settingsPollSeconds;
+            }
+
+            if (session.IsPreview) return;
+
             untilRefresh -= dt;
             untilSave -= dt;
 
@@ -63,8 +77,8 @@ namespace Garden.Core
         void OnApplicationPause(bool paused) { if (paused) TrySave(); }
         void OnApplicationQuit() { TrySave(); }
 
-        // Người chơi click vào vườn: chuyển cho các mô-đun quan tâm
-        // Chưa chạy Start (ví dụ thử ở Editor) thì tìm mô-đun tại chỗ
+        // Người chơi click vào vườn: chuyển cho các mô-đun quan tâm.
+        // Chưa chạy Start (ví dụ thử ở Editor) thì tìm mô-đun tại chỗ.
         public int DispatchClick(GardenClick click)
         {
             IGardenClickHandler[] handlers = clickHandlers.Length > 0 ? clickHandlers : GetComponentsInChildren<IGardenClickHandler>(true);
@@ -76,6 +90,20 @@ namespace Garden.Core
         {
             if (session != null) session.PreviewAge(ageDays);
             else GardenSession.PreviewAll(GetComponentsInChildren<IGardenModule>(true), ageDays);
+        }
+
+        // Chỉ đọc lại khi file thật sự đổi (so thời điểm ghi), nên kiểm tra mỗi giây gần như không tốn gì
+        void PollSettings()
+        {
+            DateTime written = File.Exists(settingsPath) ? File.GetLastWriteTimeUtc(settingsPath) : DateTime.MinValue;
+            if (written == lastSettingsWriteUtc) return;
+            ReloadSettings();
+        }
+
+        void ReloadSettings()
+        {
+            lastSettingsWriteUtc = File.Exists(settingsPath) ? File.GetLastWriteTimeUtc(settingsPath) : DateTime.MinValue;
+            ConfigurableApplier.Apply(configurables, GardenSettingsStore.Load(settingsPath));
         }
 
         void TrySave()
@@ -95,22 +123,8 @@ namespace Garden.Core
         static bool TryReadAgeArgument(out double ageDays)
         {
             ageDays = 0;
-            return TryReadArgument(AgeArgument, out string text)
+            return GardenArgs.TryGet(GardenArgs.AgeDays, out string text)
                 && double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out ageDays) && ageDays >= 0;
-        }
-
-        // Đọc giá trị đứng ngay sau một tham số dòng lệnh
-        static bool TryReadArgument(string name, out string value)
-        {
-            string[] args = Environment.GetCommandLineArgs();
-            for (int i = 0; i < args.Length - 1; i++)
-            {
-                if (args[i] != name) continue;
-                value = args[i + 1];
-                return true;
-            }
-            value = null;
-            return false;
         }
     }
 }

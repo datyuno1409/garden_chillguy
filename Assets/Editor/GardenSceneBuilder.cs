@@ -1,6 +1,8 @@
 using System.IO;
 using Garden.Core;
+using Garden.Layout;
 using Garden.Moss;
+using Garden.Rain;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -44,12 +46,15 @@ public static class GardenSceneBuilder
         BuildGround(root.transform, materials);
         BuildRocks(root.transform, materials);
 
-        // Host điều phối các mô-đun nằm dưới nó (ví dụ rêu); router biến click chuột thành click vào vườn
+        // Host điều phối các mô-đun nằm dưới nó (rêu, mưa...); router biến click chuột thành click vào vườn;
+        // GardenLayout áp dụng bố cục người chơi chọn ở bảng thiết kế
         root.AddComponent<GardenHost>();
         root.AddComponent<GardenClickRouter>();
+        root.AddComponent<GardenLayout>();
         BuildDetails(root.transform, materials);
         BuildFramingLeaves(root.transform, materials);
-        SetupLighting();
+        SetupLighting();   // trước khi dựng mưa: RainView ghi nhớ ánh sáng gốc để làm dịu khi mưa
+        BuildRain(root.transform, materials);
         SetupCamera();
         SetupPostProcessing(root.transform);
         TuneRenderPipeline();
@@ -65,7 +70,7 @@ public static class GardenSceneBuilder
 
     struct Materials
     {
-        public Material rockMoss, mossGround, grass, mushroomCap, mushroomStem, leaf, backdrop, ground;
+        public Material rockMoss, mossGround, grass, mushroomCap, mushroomStem, leaf, backdrop, ground, rain;
     }
 
     static Materials CreateMaterials()
@@ -84,6 +89,7 @@ public static class GardenSceneBuilder
             leaf = ToonMat(toon, "LeafPlaceholder", new Color(0.3f, 0.55f, 0.22f), vertexStrength: 1f, wind: 0.04f, cullOff: true),
             backdrop = ToonMat(toon, "Backdrop", new Color(0.07f, 0.2f, 0.13f), vertexStrength: 0f, rim: 0f),
             ground = ToonMat(toon, "Ground", new Color(0.1f, 0.26f, 0.15f), vertexStrength: 0f, rim: 0f),
+            rain = RainMaterial(),
         };
     }
 
@@ -185,8 +191,9 @@ public static class GardenSceneBuilder
             new[] { 1.5f, -2.3f, 0.3f, 0.22f, 0.28f, 19f },
         };
 
-        foreach (float[] r in layout)
+        for (int index = 0; index < layout.Length; index++)
         {
+            float[] r = layout[index];
             BlobSettings settings = Soft((int)r[5], amplitude: 0.11f, subdivisions: 4);
             settings.shape.flattenBottom = 0.3f;
             var scale = new Vector3(r[2], r[3], r[4]);
@@ -195,6 +202,10 @@ public static class GardenSceneBuilder
             GameObject rock = NewBlob("Rock_" + (int)r[5], rocks, new Vector3(r[0], y, r[1]), scale, m.rockMoss, settings);
             rock.transform.rotation = Quaternion.Euler(0f, r[5] * 23f, 0f);
             rock.GetComponent<ProceduralBlob>().SetCollider(true);   // để click chuột trúng được đá
+
+            // Vị trí tuỳ chỉnh được: người chơi đổi hình / ẩn đá ở bảng thiết kế (xem LayoutCatalog)
+            string slotId = index == 0 ? LayoutCatalog.MainRock : LayoutCatalog.SmallRock(index - 1);
+            rock.AddComponent<LayoutSlot>().Configure(slotId, (int)r[5]);
         }
     }
 
@@ -214,8 +225,8 @@ public static class GardenSceneBuilder
 
     static void BuildDetails(Transform parent, Materials m)
     {
-        var details = new GameObject("Details").transform;
-        details.SetParent(parent, false);
+        Transform mushroomGroup = NewGroup("Mushrooms", parent, LayoutCatalog.Mushrooms);
+        Transform grassGroup = NewGroup("GrassTufts", parent, LayoutCatalog.Grass);
 
         // x, z, kích thước
         float[][] mushrooms = { new[] { -1.65f, -1.45f, 1f }, new[] { 1.85f, -1.5f, 0.9f }, new[] { 2.1f, -1.25f, 0.55f } };
@@ -223,9 +234,9 @@ public static class GardenSceneBuilder
         {
             float x = mushrooms[i][0], z = mushrooms[i][1], size = mushrooms[i][2];
             float ground = MoundHeight(x, z);
-            NewBlob("MushroomStem" + i, details, new Vector3(x, ground + 0.1f * size, z), new Vector3(0.05f, 0.11f, 0.05f) * size,
+            NewBlob("MushroomStem" + i, mushroomGroup, new Vector3(x, ground + 0.1f * size, z), new Vector3(0.05f, 0.11f, 0.05f) * size,
                 m.mushroomStem, Soft(30 + i, 0.05f, 2));
-            NewBlob("MushroomCap" + i, details, new Vector3(x, ground + 0.21f * size, z), new Vector3(0.15f, 0.1f, 0.15f) * size,
+            NewBlob("MushroomCap" + i, mushroomGroup, new Vector3(x, ground + 0.21f * size, z), new Vector3(0.15f, 0.1f, 0.15f) * size,
                 m.mushroomCap, CapSettings(40 + i));
         }
 
@@ -233,7 +244,7 @@ public static class GardenSceneBuilder
         float[][] tufts = { new[] { -1.9f, -0.5f }, new[] { 1.7f, -0.3f }, new[] { -0.6f, -2.0f }, new[] { 0.9f, -1.7f }, new[] { 2.4f, -0.5f } };
         for (int i = 0; i < tufts.Length; i++)
         {
-            Grass(details, new Vector3(tufts[i][0], MoundHeight(tufts[i][0], tufts[i][1]), tufts[i][1]),
+            Grass(grassGroup, new Vector3(tufts[i][0], MoundHeight(tufts[i][0], tufts[i][1]), tufts[i][1]),
                 GrassSettings.Clump(70 + i, 0.4f, 0.25f, 40), m.grass);
         }
     }
@@ -251,13 +262,70 @@ public static class GardenSceneBuilder
         grass.AddComponent<GrassTuft>().Apply(settings);
     }
 
+    // ---------- Mưa ----------
+
+    static Material RainMaterial()
+    {
+        Shader shader = Shader.Find("Garden/RainStreak");
+        string path = $"{MaterialDir}/Rain.mat";
+        var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (material == null)
+        {
+            material = new Material(shader);
+            AssetDatabase.CreateAsset(material, path);
+        }
+        material.shader = shader;
+        EditorUtility.SetDirty(material);
+        return material;
+    }
+
+    // Mô-đun mưa: RainModule quyết định lúc nào mưa, RainView điều khiển hạt mưa và độ tối ánh sáng.
+    // Hạt mưa bắn từ một mặt phẳng phía trên cảnh, xuống dưới, và kéo dài theo hướng rơi thành vệt mảnh.
+    static void BuildRain(Transform parent, Materials m)
+    {
+        var go = new GameObject("Rain");
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = new Vector3(0f, 7.5f, 0.5f);
+        go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);   // hạt bắn theo +Z cục bộ: xoay để hướng xuống
+
+        var system = go.AddComponent<ParticleSystem>();
+        system.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+        ParticleSystem.MainModule main = system.main;
+        main.loop = true;
+        main.playOnAwake = false;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.startLifetime = 0.9f;
+        main.startSpeed = 15f;
+        main.startSize = new ParticleSystem.MinMaxCurve(0.02f, 0.035f);
+        main.startColor = new Color(0.85f, 0.92f, 1f, 0.55f);
+        main.maxParticles = 2000;
+
+        ParticleSystem.EmissionModule emission = system.emission;
+        emission.rateOverTime = 0f;   // RainView đặt theo độ lớn của mưa
+
+        ParticleSystem.ShapeModule shape = system.shape;
+        shape.shapeType = ParticleSystemShapeType.Box;
+        shape.scale = new Vector3(11f, 8f, 0.1f);
+
+        var particleRenderer = go.GetComponent<ParticleSystemRenderer>();
+        particleRenderer.renderMode = ParticleSystemRenderMode.Stretch;
+        particleRenderer.velocityScale = 0.04f;
+        particleRenderer.lengthScale = 1f;
+        particleRenderer.sharedMaterial = m.rain;
+        particleRenderer.shadowCastingMode = ShadowCastingMode.Off;
+        particleRenderer.receiveShadows = false;
+
+        var module = go.AddComponent<RainModule>();
+        go.AddComponent<RainView>().Configure(module, system, Object.FindAnyObjectByType<Light>());
+    }
+
     // ---------- Lá tạm ở rìa khung ----------
 
     // Lá phẳng đặt tạm ở rìa khung cho có chiều sâu. Bạn thay bằng lá làm trong Maya (xoá hoặc thay nhóm "Placeholders").
     static void BuildFramingLeaves(Transform parent, Materials m)
     {
-        var placeholders = new GameObject("Placeholders").transform;
-        placeholders.SetParent(parent, false);
+        Transform placeholders = NewGroup("Placeholders", parent, LayoutCatalog.Leaves);
 
         // vị trí, góc xoay (độ), kích thước
         var leaves = new (Vector3 position, Vector3 euler, Vector3 scale)[]
@@ -389,6 +457,15 @@ public static class GardenSceneBuilder
         go.transform.localScale = scale;
         go.AddComponent<ProceduralBlob>().Apply(settings);
         return go;
+    }
+
+    // Nhóm vật cùng một vị trí tuỳ chỉnh (ví dụ cả đám nấm), ẩn/hiện cùng nhau
+    static Transform NewGroup(string name, Transform parent, string slotId)
+    {
+        var group = new GameObject(name).transform;
+        group.SetParent(parent, false);
+        group.gameObject.AddComponent<LayoutSlot>().Configure(slotId, 0);
+        return group;
     }
 
     // GameObject có MeshFilter + MeshRenderer với vật liệu cho sẵn

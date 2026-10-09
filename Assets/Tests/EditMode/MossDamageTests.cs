@@ -327,7 +327,7 @@ namespace Garden.Tests
         {
             module.OnGardenClick(ClickOn(rock, new Vector3(0, 0.5f, 0)));
 
-            module.Tick(MossSettings.Default.healDays + 1);
+            module.Tick(TimeWindow.FromDays(T0, MossSettings.Default.healDays + 1));
 
             GardenState saved = module.Save(GardenState.CreateNew(T0, 1));
             saved.TryGetSection(MossModule.ModuleId, out MossSection section);

@@ -17,4 +17,18 @@ namespace Garden.Core
             this.source = source;
         }
     }
+
+    // Môi trường giúp cây cỏ mọc nhanh hơn: thêm số "ngày mọc" bổ sung (ví dụ mưa rơi 1 giờ thì thêm 3 giờ mọc).
+    // Cộng dồn nên thứ tự các mô-đun được cập nhật không quan trọng.
+    public readonly struct GrowthBoost
+    {
+        public readonly double extraDays;
+        public readonly string source;
+
+        public GrowthBoost(double extraDays, string source)
+        {
+            this.extraDays = extraDays;
+            this.source = source;
+        }
+    }
 }

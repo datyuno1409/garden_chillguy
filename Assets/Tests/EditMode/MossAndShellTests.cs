@@ -118,7 +118,7 @@ namespace Garden.Tests
         {
             var context = new GardenContext(1, new GardenEventBus());
             module.Load(GardenState.CreateNew(T0, 1), context);
-            module.Tick(6.5);
+            module.Tick(TimeWindow.FromDays(T0, 6.5));
             GardenState saved = module.Save(GardenState.CreateNew(T0, 1));
 
             var otherHost = new GameObject("moss-test-2");

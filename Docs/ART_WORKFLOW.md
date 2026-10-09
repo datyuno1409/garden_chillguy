@@ -11,6 +11,8 @@ Mô-đun rêu (`MossModule` trên `Garden/Rocks`, điều phối bởi `GardenHo
 ngày đầu vài đốm trên đỉnh đá, mọc chậm lúc đầu, nhanh ở giữa, chậm lại gần cuối; mặc định 14 ngày thì dừng ở độ phủ 0.5 (đỉnh và một phần thân phủ rêu, chân đá vẫn lộ).
 Chỉnh trong component `Moss Module` (object `Garden/Rocks`): `Settings` (days To Full Cover, start/max Coverage).
 
+- **Mưa**: mô-đun `Rain` (object `Garden/Rain`). Mưa tự nhiên theo lịch riêng của từng vườn (tần suất ít/vừa/nhiều), làm rêu mọc nhanh gấp 4 trong lúc mưa (`Growth Boost Factor` = 3 là phần cộng thêm), có hạt mưa và ánh sáng dịu xuống. Người chơi bật/tắt, đổi tần suất, hoặc gọi mưa ngay ở bảng thiết kế. Xem thử ở Editor: menu `Tools/Garden/Dev/Preview rain ON/OFF`. Hạt mưa dùng shader `Garden/RainStreak` (vệt mảnh); muốn đổi kiểu mưa thì sửa ParticleSystem trên object `Rain` hoặc vật liệu `Rain.mat`.
+- **Bảng thiết kế** (Control Panel, tab "Thiết kế"): đổi hình đá, ẩn/hiện nấm, cỏ, lá; mưa; tốc độ rêu. Cài đặt lưu ở `%LOCALAPPDATA%\GardenChill\garden_settings.json` và cửa sổ vườn áp dụng ngay. Giao diện bảng hiện còn tạm (IMGUI mặc định), phần chức năng và khung mô-đun đã dùng được.
 - **Click phá rêu**: click chuột trái vào đá thì rêu quanh điểm đó bị bóc (bán kính `Hit Radius`, mặc định 0.45 m), lành dần sau `Heal Days` (mặc định 2 ngày). Chỉnh trong `Moss Module`. Vật liệu có `Damageable = 0` (mô đất nền) không bị bóc.
 - Trạng thái lưu ở `%LOCALAPPDATA%\GardenChill\garden_state.json` (bản build) và `garden_state.editor.json` (Editor). Hạt giống trong file quyết định kiểu loang của rêu, mỗi vườn một kiểu.
 - Xem thử không phải đợi: menu **Tools/Garden/Dev/Preview moss at day N**, hoặc chạy bản build với `Aquarium.exe -gardenAgeDays 7` (xem thử, không ghi file).

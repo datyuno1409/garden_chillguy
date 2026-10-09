@@ -1,4 +1,5 @@
 using System;
+using Garden.Layout;
 using UnityEngine;
 
 [Serializable]
@@ -32,7 +33,7 @@ public struct BlobSettings
 // Một khối đá / bụi cây / mô đất sinh bằng code từ "seed". Kích thước lấy từ scale của GameObject.
 // Mesh không lưu vào scene mà dựng lại mỗi lần chạy, nên scene chỉ chứa seed và vài thông số.
 [ExecuteAlways, RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
-public class ProceduralBlob : MonoBehaviour
+public class ProceduralBlob : MonoBehaviour, ILayoutVariant
 {
     [SerializeField] BlobSettings settings = BlobSettings.Rock(1);
 
@@ -54,6 +55,14 @@ public class ProceduralBlob : MonoBehaviour
     {
         settings = newSettings;
         Rebuild();
+    }
+
+    // Đổi hình dạng theo một hạt giống mới (bố cục do người chơi chọn ở bảng thiết kế)
+    public void SetVariantSeed(int seed)
+    {
+        BlobSettings changed = settings;
+        changed.shape.seed = seed;
+        Apply(changed);
     }
 
     void OnEnable() { Rebuild(); }

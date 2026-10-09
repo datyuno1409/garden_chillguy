@@ -27,7 +27,7 @@ public static class PipBuild
     {
         string root = Path.GetFullPath(Path.Combine(Application.dataPath, "../../Builds"));
         Build(AppNames.Aquarium, AquariumScene, root, resizable: true, new Vector2Int(400, 400));
-        Build(AppNames.ControlPanel, PanelScene, root, resizable: true, new Vector2Int(360, 320));
+        Build(AppNames.ControlPanel, PanelScene, root, resizable: true, new Vector2Int(460, 600));
         Debug.Log("PipBuild: build xong tại " + root);
     }
 
