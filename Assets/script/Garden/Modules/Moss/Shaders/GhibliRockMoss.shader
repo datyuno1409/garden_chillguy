@@ -39,6 +39,7 @@ Shader "Garden/RockMoss"
 
         [Header(Mapping)]
         [Toggle] _UseUV ("Use mesh UV (thay vì 3 mặt phẳng)", Float) = 0
+        [Toggle] _RockUseUV ("Rock only: use mesh UV (rêu vẫn chiếu 3 mặt phẳng, không lộ đường nối UV)", Float) = 0
     }
 
     SubShader
@@ -87,6 +88,7 @@ Shader "Garden/RockMoss"
                 half _RimPower;
                 half _RimStrength;
                 half _UseUV;
+                half _RockUseUV;
             CBUFFER_END
 
             struct Attributes
@@ -188,6 +190,10 @@ Shader "Garden/RockMoss"
                     moss = SampleTriplanar(TEXTURE2D_ARGS(_MossTex, sampler_MossTex), input.positionWS, normalWS, _MossTiling);
                     mask = SampleTriplanar(TEXTURE2D_ARGS(_MossMask, sampler_MossMask), input.positionWS + SeedShift(), normalWS, _MaskTiling);
                 }
+
+                // Đá đã vẽ tay theo UV (còn rêu vẫn chiếu 3 mặt phẳng): chỉ đổi cách lấy mẫu texture đá
+                if (_RockUseUV > 0.5h && _UseUV <= 0.5h)
+                    rock = SAMPLE_TEXTURE2D(_RockTex, sampler_RockTex, input.uv * _RockTiling);
 
                 half score, threshold;
                 half mossAmount = MossAmount(mask, normalWS, input.positionWS, score, threshold);
